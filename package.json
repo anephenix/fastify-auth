@@ -20,12 +20,18 @@
 		"node": ">=18"
 	},
 	"scripts": {
+		"analyze": "size-limit --why",
 		"build": "tsc --project tsconfig.json",
 		"format": "npx @biomejs/biome check . --write",
 		"lint": "npx @biomejs/biome check .",
 		"lint:package": "npx publint",
+		"prepare-patch-release": "npm t && npm run build && npm run size && npm run update-changelog && git add CHANGELOG.md && git commit -m \"Updated changelog\" && npm version patch",
+		"publish-patch-release": "npm run prepare-patch-release && git push origin main && git push --tags",
+		"size": "size-limit",
+		"test": "vitest run --coverage",
+		"update-changelog": "node --experimental-strip-types scripts/update-changelog.ts",
 		"watch": "tsc --project tsconfig.json --watch",
-		"test": "vitest run --coverage"
+		"prepare": "husky"
 	},
 	"dependencies": {
 		"fastify-plugin": "^5.0.1",
@@ -45,12 +51,24 @@
 		"@anephenix/auth": "^0.0.6",
 		"@biomejs/biome": "2.4.12",
 		"@fastify/cookie": "^11.0.2",
+		"@size-limit/esbuild": "^12.1.0",
+		"@size-limit/esbuild-why": "^12.1.0",
+		"@size-limit/file": "^12.1.0",
 		"@types/node": "^22.0.0",
 		"@types/qrcode": "^1.5.5",
 		"@vitest/coverage-v8": "^4.1.4",
 		"fastify": "^5.8.3",
+		"husky": "^9.1.7",
 		"publint": "^0.3.18",
+		"size-limit": "^12.1.0",
+		"size-limit-node-esbuild": "^0.4.0",
 		"typescript": "^6.0.2",
 		"vitest": "^4.1.4"
-	}
+	},
+	"size-limit": [
+		{
+			"path": "dist/index.js",
+			"limit": "25 kB"
+		}
+	]
 }
