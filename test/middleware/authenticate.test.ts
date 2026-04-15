@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import { createAuthenticateSession } from "../../src/middleware/authenticate.js";
 import type { ISessionModelStatic } from "../../src/types.js";
 
@@ -29,13 +29,9 @@ function buildSessionModel(findOneResult: unknown) {
 async function buildApp(Session: ISessionModelStatic) {
 	const app = Fastify();
 	const authenticateSession = createAuthenticateSession({ Session });
-	app.get(
-		"/protected",
-		{ preHandler: [authenticateSession] },
-		(req, reply) => {
-			reply.send({ user: req.user, token: req.access_token });
-		},
-	);
+	app.get("/protected", { preHandler: [authenticateSession] }, (req, reply) => {
+		reply.send({ user: req.user, token: req.access_token });
+	});
 	await app.ready();
 	return app;
 }

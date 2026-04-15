@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import { registerMagicLinksStrategy } from "../../src/strategies/magic-links.js";
 import type {
 	AuthFastifyPluginOptions,
@@ -28,20 +28,24 @@ const mockMagicLinkTokens = {
 
 // ─── App builder ─────────────────────────────────────────────────────────────
 
-function buildApp(opts: {
-	userFindResult?: unknown;
-	magicLinkInsertResult?: unknown;
-	magicLinkVerifyResult?: unknown;
-	onMagicLinkCreated?: () => Promise<void>;
-} = {}) {
+function buildApp(
+	opts: {
+		userFindResult?: unknown;
+		magicLinkInsertResult?: unknown;
+		magicLinkVerifyResult?: unknown;
+		onMagicLinkCreated?: () => Promise<void>;
+	} = {},
+) {
 	const app = Fastify();
 
 	const User = {
 		query: vi.fn().mockReturnValue({
 			where: vi.fn().mockReturnValue({
-				first: vi.fn().mockResolvedValue(
-					opts.userFindResult !== undefined ? opts.userFindResult : mockUser,
-				),
+				first: vi
+					.fn()
+					.mockResolvedValue(
+						opts.userFindResult !== undefined ? opts.userFindResult : mockUser,
+					),
 			}),
 		}),
 	} as unknown as IUserModelStatic;
@@ -49,15 +53,21 @@ function buildApp(opts: {
 	const MagicLink = {
 		generateTokens: vi.fn().mockResolvedValue(mockMagicLinkTokens),
 		query: vi.fn().mockReturnValue({
-			insert: vi.fn().mockResolvedValue(
-				opts.magicLinkInsertResult !== undefined ? opts.magicLinkInsertResult : {},
-			),
+			insert: vi
+				.fn()
+				.mockResolvedValue(
+					opts.magicLinkInsertResult !== undefined
+						? opts.magicLinkInsertResult
+						: {},
+				),
 		}),
-		verifyTokenAndCode: vi.fn().mockResolvedValue(
-			opts.magicLinkVerifyResult !== undefined
-				? opts.magicLinkVerifyResult
-				: { userId: 1 },
-		),
+		verifyTokenAndCode: vi
+			.fn()
+			.mockResolvedValue(
+				opts.magicLinkVerifyResult !== undefined
+					? opts.magicLinkVerifyResult
+					: { userId: 1 },
+			),
 	} as unknown as IMagicLinkModelStatic;
 
 	const Session = {
@@ -168,9 +178,9 @@ describe("POST /magic-links/verify", () => {
 
 	it("returns 400 when verification fails", async () => {
 		const { app, MagicLink } = buildApp();
-		(MagicLink.verifyTokenAndCode as ReturnType<typeof vi.fn>).mockRejectedValue(
-			new Error("Invalid or expired token"),
-		);
+		(
+			MagicLink.verifyTokenAndCode as ReturnType<typeof vi.fn>
+		).mockRejectedValue(new Error("Invalid or expired token"));
 		await app.ready();
 		const response = await app.inject({
 			method: "POST",

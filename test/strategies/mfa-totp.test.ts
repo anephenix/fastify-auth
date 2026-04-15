@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import { registerMfaTotpStrategy } from "../../src/strategies/mfa-totp.js";
 import type {
 	AuthFastifyPluginOptions,
@@ -28,7 +28,8 @@ vi.mock("qrcode", () => ({
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
 // A valid 64-character hex key for AES-256-GCM encryption
-const TEST_ENCRYPTION_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const TEST_ENCRYPTION_KEY =
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 const mockUser = {
 	id: 1,
@@ -92,34 +93,44 @@ const totpOpts = {
 
 // ─── App builder ─────────────────────────────────────────────────────────────
 
-function buildApp(opts: {
-	userResult?: unknown;
-	mfaTokenResult?: unknown;
-	sessionFindOneResult?: unknown;
-	recoveryCodes?: string[];
-	existingRecoveryCodes?: unknown[];
-} = {}) {
+function buildApp(
+	opts: {
+		userResult?: unknown;
+		mfaTokenResult?: unknown;
+		sessionFindOneResult?: unknown;
+		recoveryCodes?: string[];
+		existingRecoveryCodes?: unknown[];
+	} = {},
+) {
 	const app = Fastify();
 
 	const User = {
 		query: vi.fn().mockReturnValue({
 			insert: vi.fn().mockResolvedValue(mockUser),
-			findById: vi.fn().mockResolvedValue(
+			findById: vi
+				.fn()
+				.mockResolvedValue(
+					opts.userResult !== undefined ? opts.userResult : mockUser,
+				),
+		}),
+		authenticate: vi
+			.fn()
+			.mockResolvedValue(
 				opts.userResult !== undefined ? opts.userResult : mockUser,
 			),
-		}),
-		authenticate: vi.fn().mockResolvedValue(
-			opts.userResult !== undefined ? opts.userResult : mockUser,
-		),
 	} as unknown as IUserModelStatic;
 
 	const MfaToken = {
 		query: vi.fn().mockReturnValue({
 			insert: vi.fn().mockResolvedValue(mockMfaToken),
 			where: vi.fn().mockReturnValue({
-				first: vi.fn().mockResolvedValue(
-					opts.mfaTokenResult !== undefined ? opts.mfaTokenResult : mockMfaToken,
-				),
+				first: vi
+					.fn()
+					.mockResolvedValue(
+						opts.mfaTokenResult !== undefined
+							? opts.mfaTokenResult
+							: mockMfaToken,
+					),
 			}),
 		}),
 	} as unknown as IMfaTokenModelStatic;
@@ -128,14 +139,18 @@ function buildApp(opts: {
 		query: vi.fn().mockReturnValue({
 			insert: vi.fn().mockResolvedValue({}),
 		}),
-		generateCodes: vi.fn().mockResolvedValue(opts.recoveryCodes ?? ["code1", "code2"]),
+		generateCodes: vi
+			.fn()
+			.mockResolvedValue(opts.recoveryCodes ?? ["code1", "code2"]),
 		checkForRecoveryCodeAndConsume: vi.fn().mockResolvedValue(true),
 	} as unknown as IRecoveryCodeModelStatic;
 
 	const Session = {
 		query: vi.fn().mockReturnValue({
 			insert: vi.fn().mockResolvedValue({ id: 1, ...tokenObj }),
-			findOne: vi.fn().mockResolvedValue(opts.sessionFindOneResult ?? mockSession),
+			findOne: vi
+				.fn()
+				.mockResolvedValue(opts.sessionFindOneResult ?? mockSession),
 		}),
 		generateTokens: vi.fn().mockReturnValue(tokenObj),
 	} as unknown as ISessionModelStatic;
@@ -306,7 +321,9 @@ describe("POST /login/mfa", () => {
 			payload: { token: "mfa_token_abc", code: "123456" },
 		});
 		expect(response.statusCode).toBe(400);
-		expect(response.json()).toMatchObject({ error: "MFA token has already been used" });
+		expect(response.json()).toMatchObject({
+			error: "MFA token has already been used",
+		});
 	});
 });
 

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { FastifyRequest } from "fastify";
+import { describe, expect, it } from "vitest";
 import { detectClientType } from "../../src/helpers/detect-client-type.js";
 
 function makeRequest(headers: Record<string, string>): FastifyRequest {

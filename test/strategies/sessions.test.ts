@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import Fastify from "fastify";
 import cookie from "@fastify/cookie";
+import Fastify from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import { registerSessionsStrategy } from "../../src/strategies/sessions.js";
 import type {
 	AuthFastifyPluginOptions,
@@ -47,7 +47,10 @@ const mockAuth = {
 
 type QBOverrides = Record<string, unknown>;
 
-function buildApp(queryOverrides: QBOverrides = {}, sessionObj = buildMockSession()) {
+function buildApp(
+	queryOverrides: QBOverrides = {},
+	sessionObj = buildMockSession(),
+) {
 	const app = Fastify();
 	app.register(cookie);
 
@@ -100,10 +103,18 @@ describe("POST /signup", () => {
 		const response = await app.inject({
 			method: "POST",
 			url: "/signup",
-			payload: { username: "testuser", email: "test@example.com", password: "secret" },
+			payload: {
+				username: "testuser",
+				email: "test@example.com",
+				password: "secret",
+			},
 		});
 		expect(response.statusCode).toBe(201);
-		expect(response.json()).toMatchObject({ id: 1, username: "testuser", email: "test@example.com" });
+		expect(response.json()).toMatchObject({
+			id: 1,
+			username: "testuser",
+			email: "test@example.com",
+		});
 	});
 
 	it("returns 400 when user creation fails", async () => {
@@ -115,7 +126,11 @@ describe("POST /signup", () => {
 		const response = await app.inject({
 			method: "POST",
 			url: "/signup",
-			payload: { username: "testuser", email: "test@example.com", password: "secret" },
+			payload: {
+				username: "testuser",
+				email: "test@example.com",
+				password: "secret",
+			},
 		});
 		expect(response.statusCode).toBe(400);
 		expect(response.json()).toMatchObject({ error: "Database error" });
@@ -136,7 +151,11 @@ describe("POST /signup", () => {
 		const response = await app.inject({
 			method: "POST",
 			url: "/signup",
-			payload: { username: "testuser", email: "test@example.com", password: "secret" },
+			payload: {
+				username: "testuser",
+				email: "test@example.com",
+				password: "secret",
+			},
 		});
 		expect(response.statusCode).toBe(400);
 		expect(response.json()).toMatchObject({ error: "email already exists." });
@@ -211,10 +230,18 @@ describe("POST /login", () => {
 		});
 		expect(response.statusCode).toBe(201);
 		const setCookieHeader = response.headers["set-cookie"];
-		expect(Array.isArray(setCookieHeader) || typeof setCookieHeader === "string").toBe(true);
-		const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
-		expect(cookies.some((c: string) => c.startsWith("access_token="))).toBe(true);
-		expect(cookies.some((c: string) => c.startsWith("refresh_token="))).toBe(true);
+		expect(
+			Array.isArray(setCookieHeader) || typeof setCookieHeader === "string",
+		).toBe(true);
+		const cookies = Array.isArray(setCookieHeader)
+			? setCookieHeader
+			: [setCookieHeader];
+		expect(cookies.some((c: string) => c.startsWith("access_token="))).toBe(
+			true,
+		);
+		expect(cookies.some((c: string) => c.startsWith("refresh_token="))).toBe(
+			true,
+		);
 	});
 });
 
@@ -237,7 +264,11 @@ describe("GET /profile", () => {
 			headers: { authorization: "Bearer test_access_token" },
 		});
 		expect(response.statusCode).toBe(200);
-		expect(response.json()).toMatchObject({ id: 1, username: "testuser", email: "test@example.com" });
+		expect(response.json()).toMatchObject({
+			id: 1,
+			username: "testuser",
+			email: "test@example.com",
+		});
 	});
 });
 
@@ -262,7 +293,9 @@ describe("POST /logout", () => {
 			headers: { authorization: "Bearer test_access_token" },
 		});
 		expect(response.statusCode).toBe(200);
-		expect(response.json()).toMatchObject({ message: "Logged out successfully" });
+		expect(response.json()).toMatchObject({
+			message: "Logged out successfully",
+		});
 	});
 });
 
@@ -278,14 +311,18 @@ describe("POST /auth/refresh", () => {
 			payload: {},
 		});
 		expect(response.statusCode).toBe(401);
-		expect(response.json()).toMatchObject({ error: "No refresh token provided" });
+		expect(response.json()).toMatchObject({
+			error: "No refresh token provided",
+		});
 	});
 
 	it("returns 401 for invalid or expired refresh token", async () => {
 		const expiredSession = buildMockSession({
 			refreshTokenHasExpired: vi.fn().mockReturnValue(true),
 		});
-		const { app } = buildApp({ findOne: vi.fn().mockResolvedValue(expiredSession) });
+		const { app } = buildApp({
+			findOne: vi.fn().mockResolvedValue(expiredSession),
+		});
 		await app.ready();
 		const response = await app.inject({
 			method: "POST",
@@ -341,8 +378,12 @@ describe("POST /auth/refresh", () => {
 		});
 		expect(response.statusCode).toBe(201);
 		const setCookieHeader = response.headers["set-cookie"];
-		const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
-		expect(cookies.some((c: string) => c.startsWith("access_token="))).toBe(true);
+		const cookies = Array.isArray(setCookieHeader)
+			? setCookieHeader
+			: [setCookieHeader];
+		expect(cookies.some((c: string) => c.startsWith("access_token="))).toBe(
+			true,
+		);
 	});
 });
 
@@ -392,7 +433,9 @@ describe("DELETE /sessions", () => {
 			headers: { authorization: "Bearer test_access_token" },
 		});
 		expect(response.statusCode).toBe(200);
-		expect(response.json()).toMatchObject({ message: "Sessions deleted successfully" });
+		expect(response.json()).toMatchObject({
+			message: "Sessions deleted successfully",
+		});
 	});
 });
 
@@ -402,7 +445,10 @@ describe("DELETE /sessions/:id", () => {
 	it("returns 401 when not authenticated", async () => {
 		const { app } = buildApp({ findOne: vi.fn().mockResolvedValue(null) });
 		await app.ready();
-		const response = await app.inject({ method: "DELETE", url: "/sessions/99" });
+		const response = await app.inject({
+			method: "DELETE",
+			url: "/sessions/99",
+		});
 		expect(response.statusCode).toBe(401);
 	});
 
@@ -411,7 +457,9 @@ describe("DELETE /sessions/:id", () => {
 		const authSession = buildMockSession();
 		const qb: QBOverrides = {
 			findOne: vi.fn().mockResolvedValue(authSession),
-			where: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue(null) }),
+			where: vi
+				.fn()
+				.mockReturnValue({ first: vi.fn().mockResolvedValue(null) }),
 		};
 		const { app } = buildApp(qb);
 		await app.ready();
@@ -428,7 +476,9 @@ describe("DELETE /sessions/:id", () => {
 		const session = buildMockSession({ access_token: "test_access_token" });
 		const { app } = buildApp({
 			findOne: vi.fn().mockResolvedValue(session),
-			where: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue(session) }),
+			where: vi
+				.fn()
+				.mockReturnValue({ first: vi.fn().mockResolvedValue(session) }),
 		});
 		await app.ready();
 		const response = await app.inject({

@@ -239,9 +239,7 @@ export function registerMfaTotpStrategy(
 						recovery_code,
 					);
 					if (!isValid) {
-						return reply
-							.status(400)
-							.send({ error: "Invalid recovery code" });
+						return reply.status(400).send({ error: "Invalid recovery code" });
 					}
 				} else {
 					const secret = totpCrypto.decrypt(user.mfa_totp_secret);

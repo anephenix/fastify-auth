@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import authPlugin from "../src/index.js";
 import type {
 	AuthFastifyPluginOptions,
@@ -91,7 +91,10 @@ describe("authPlugin (index.ts)", () => {
 			strategy: "mfa-totp",
 			auth: mockAuth,
 			models: { User, Session, MfaToken, RecoveryCode },
-			totp: { serviceName: "TestApp", secretEncryptionKey: TEST_ENCRYPTION_KEY },
+			totp: {
+				serviceName: "TestApp",
+				secretEncryptionKey: TEST_ENCRYPTION_KEY,
+			},
 		});
 		await app.ready();
 		const response = await app.inject({ method: "POST", url: "/signup" });
@@ -106,7 +109,10 @@ describe("authPlugin (index.ts)", () => {
 			models: { User, ForgotPassword },
 		});
 		await app.ready();
-		const response = await app.inject({ method: "POST", url: "/forgot-password" });
+		const response = await app.inject({
+			method: "POST",
+			url: "/forgot-password",
+		});
 		expect(response.statusCode).not.toBe(404);
 	});
 

@@ -25,9 +25,7 @@ export function registerMagicLinksStrategy(
 	const { User, Session, MagicLink } = models;
 
 	if (!Session) {
-		throw new Error(
-			"Session model is required for the 'magic-links' strategy",
-		);
+		throw new Error("Session model is required for the 'magic-links' strategy");
 	}
 	if (!MagicLink) {
 		throw new Error(

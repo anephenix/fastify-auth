@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import { registerMfaSmsStrategy } from "../../src/strategies/mfa-sms.js";
 import type {
 	AuthFastifyPluginOptions,
-	ISmsCodeModelStatic,
 	ISessionModelStatic,
+	ISmsCodeModelStatic,
 	IUserModelStatic,
 } from "../../src/types.js";
 
@@ -44,25 +44,31 @@ const mockAuth = {
 
 // ─── App builder ─────────────────────────────────────────────────────────────
 
-function buildApp(opts: {
-	userAuthResult?: unknown;
-	smsFindResult?: unknown;
-	onSmsCodeCreated?: () => Promise<void>;
-} = {}) {
+function buildApp(
+	opts: {
+		userAuthResult?: unknown;
+		smsFindResult?: unknown;
+		onSmsCodeCreated?: () => Promise<void>;
+	} = {},
+) {
 	const app = Fastify();
 
 	const User = {
-		authenticate: vi.fn().mockResolvedValue(
-			opts.userAuthResult !== undefined ? opts.userAuthResult : mockUser,
-		),
+		authenticate: vi
+			.fn()
+			.mockResolvedValue(
+				opts.userAuthResult !== undefined ? opts.userAuthResult : mockUser,
+			),
 	} as unknown as IUserModelStatic;
 
 	const SmsCode = {
 		query: vi.fn().mockReturnValue({
 			insert: vi.fn().mockResolvedValue(mockSmsCode),
-			findOne: vi.fn().mockResolvedValue(
-				opts.smsFindResult !== undefined ? opts.smsFindResult : mockSmsCode,
-			),
+			findOne: vi
+				.fn()
+				.mockResolvedValue(
+					opts.smsFindResult !== undefined ? opts.smsFindResult : mockSmsCode,
+				),
 		}),
 	} as unknown as ISmsCodeModelStatic;
 
@@ -207,7 +213,9 @@ describe("POST /sessions/verify-code", () => {
 			payload: { token: "sms_token_abc", code: "123456" },
 		});
 		expect(response.statusCode).toBe(400);
-		expect(response.json()).toMatchObject({ error: "Code has already been used" });
+		expect(response.json()).toMatchObject({
+			error: "Code has already been used",
+		});
 	});
 
 	it("returns 400 when code has expired", async () => {

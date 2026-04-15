@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import { registerForgottenPasswordStrategy } from "../../src/strategies/forgotten-password.js";
 import type {
 	AuthFastifyPluginOptions,
@@ -34,29 +34,35 @@ const mockAuth = {
 
 // ─── App builder ─────────────────────────────────────────────────────────────
 
-function buildApp(opts: {
-	forgotPasswordRecord?: unknown;
-	userResult?: unknown;
-	onForgotPasswordRequested?: () => Promise<void>;
-} = {}) {
+function buildApp(
+	opts: {
+		forgotPasswordRecord?: unknown;
+		userResult?: unknown;
+		onForgotPasswordRequested?: () => Promise<void>;
+	} = {},
+) {
 	const app = Fastify();
 
 	const User = {
 		query: vi.fn().mockReturnValue({
-			findById: vi.fn().mockResolvedValue(
-				opts.userResult !== undefined ? opts.userResult : mockUser,
-			),
+			findById: vi
+				.fn()
+				.mockResolvedValue(
+					opts.userResult !== undefined ? opts.userResult : mockUser,
+				),
 		}),
 	} as unknown as IUserModelStatic;
 
 	const ForgotPassword = {
 		query: vi.fn().mockReturnValue({
 			where: vi.fn().mockReturnValue({
-				first: vi.fn().mockResolvedValue(
-					opts.forgotPasswordRecord !== undefined
-						? opts.forgotPasswordRecord
-						: mockForgotPasswordRecord,
-				),
+				first: vi
+					.fn()
+					.mockResolvedValue(
+						opts.forgotPasswordRecord !== undefined
+							? opts.forgotPasswordRecord
+							: mockForgotPasswordRecord,
+					),
 			}),
 		}),
 	} as unknown as IForgotPasswordModelStatic;
@@ -230,7 +236,9 @@ describe("GET /reset-password/:selector", () => {
 			url: "/reset-password/test_selector?token=valid_token",
 		});
 		expect(response.statusCode).toBe(200);
-		expect(response.json()).toMatchObject({ message: "Password reset token is valid" });
+		expect(response.json()).toMatchObject({
+			message: "Password reset token is valid",
+		});
 	});
 });
 
@@ -378,7 +386,9 @@ describe("POST /reset-password", () => {
 			},
 		});
 		expect(response.statusCode).toBe(200);
-		expect(response.json()).toMatchObject({ message: "Password reset successfully" });
+		expect(response.json()).toMatchObject({
+			message: "Password reset successfully",
+		});
 	});
 });
 
