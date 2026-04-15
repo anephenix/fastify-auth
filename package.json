@@ -1,0 +1,51 @@
+{
+  "name": "@anephenix/fastify-auth",
+  "version": "0.0.1",
+  "description": "Fastify plugin for @anephenix/auth — drop-in route registration for password, magic-link, SMS MFA, TOTP MFA, and password-reset strategies",
+  "author": "Paul Jensen <paul@anephenix.com>",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "watch": "tsc --project tsconfig.json --watch",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "fastify-plugin": "^5.0.1",
+    "otplib": "^12.0.1",
+    "qrcode": "^1.5.4"
+  },
+  "peerDependencies": {
+    "@anephenix/auth": ">=0.0.6",
+    "fastify": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@fastify/cookie": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@anephenix/auth": "^0.0.6",
+    "@fastify/cookie": "^11.0.2",
+    "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.5",
+    "@vitest/coverage-v8": "^4.1.4",
+    "fastify": "^5.8.3",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  }
+}
