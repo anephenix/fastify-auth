@@ -90,6 +90,11 @@ export function registerMfaSmsStrategy(
 					return reply.status(400).send({ error: "Code is required" });
 				}
 
+				/*
+          NOTE - do we need to perform any validation checks on the token/code,
+          or do we trust the ORM to perform injection attack prevention?
+        */
+
 				const smsCode = await SmsCode.query().findOne({ token });
 				if (!smsCode) {
 					return reply.status(400).send({ error: "Invalid token" });

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { handleError } from "../helpers/handle-error.js";
 import type { AuthFastifyPluginOptions } from "../types.js";
 
+/* Checks whether a string is the correct format for an email address */
 const isEmail = (value: string): boolean =>
 	/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 

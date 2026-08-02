@@ -73,7 +73,7 @@ export function registerForgottenPasswordStrategy(
 			const { selector } = request.params as { selector: string };
 			const { token } = request.query as { token?: string };
 
-			if (!token) {
+			if (!token || !selector) {
 				return reply
 					.status(400)
 					.send({ error: "Invalid reset password selector or token" });
@@ -137,6 +137,12 @@ export function registerForgottenPasswordStrategy(
 				return reply
 					.status(400)
 					.send({ error: "Password does not meet validation rules" });
+			}
+
+			if (!token || !selector) {
+				return reply
+					.status(400)
+					.send({ error: "Invalid reset password selector or token" });
 			}
 
 			const record = await ForgotPassword.query()
