@@ -98,6 +98,45 @@ app.register(authPlugin, {
 | `DELETE` | `/sessions`       | ✓             | Delete all sessions except the active one        |
 | `DELETE` | `/sessions/:id`   | ✓             | Delete a specific session                        |
 
+**Example: signup, login (API client), call a protected route**
+
+```bash
+curl -X POST http://localhost:3000/signup \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "email": "alice@example.com", "password": "correct horse battery staple"}'
+# 201
+# { "id": 1, "username": "alice", "email": "alice@example.com" }
+
+curl -X POST http://localhost:3000/login \
+  -H "Content-Type: application/json" \
+  -d '{"identifier": "alice", "password": "correct horse battery staple"}'
+# 201
+# {
+#   "access_token": "...",
+#   "refresh_token": "...",
+#   "access_token_expires_at": "2026-08-31T12:15:00.000Z",
+#   "refresh_token_expires_at": "2026-09-07T12:00:00.000Z"
+# }
+
+curl http://localhost:3000/profile \
+  -H "Authorization: Bearer <access_token>"
+# 200
+# { "id": 1, "username": "alice", "email": "alice@example.com" }
+```
+
+A **web client** (`x-client-type: web` header, or `Accept: text/html`) gets the
+same tokens set as `HttpOnly` cookies instead of in the body - `/login` then
+just returns the plain-text message `"Authenticated successfully"`.
+
+`POST /auth/refresh` takes `{ "refresh_token": "..." }` for API clients (or
+reads the `refresh_token` cookie for web clients) and returns a new
+`access_token`/`refresh_token` pair in the same shape as `/login`.
+
+`DELETE /sessions/:id` returns `409` with
+`{ "error": "conflict", "message": "Cannot delete the active session. Use the /logout endpoint instead." }`
+if you try to delete the session you're currently authenticated with - use
+`/logout` for that instead.
+
 ---
 
 ### magic-links
@@ -128,6 +167,30 @@ app.register(authPlugin, {
 | `POST` | `/magic-links`        | Look up user by email, create magic-link record, call `onMagicLinkCreated`  |
 | `POST` | `/magic-links/verify` | Verify token + code; return access + refresh tokens                          |
 
+**Example**
+
+```bash
+curl -X POST http://localhost:3000/magic-links \
+  -H "Content-Type: application/json" \
+  -d '{"email": "alice@example.com"}'
+# 201
+# { "message": "Magic link created" }
+
+curl -X POST http://localhost:3000/magic-links/verify \
+  -H "Content-Type: application/json" \
+  -d '{"token": "<token from onMagicLinkCreated>", "code": "<code from onMagicLinkCreated>"}'
+# 201
+# {
+#   "access_token": "...",
+#   "refresh_token": "...",
+#   "access_token_expires_at": "2026-08-31T12:15:00.000Z",
+#   "refresh_token_expires_at": "2026-09-07T12:00:00.000Z"
+# }
+```
+
+The `token`/`code` pair only exists in your `onMagicLinkCreated` hook (e.g.
+embedded in the email you send) - there's no endpoint to look them up.
+
 ---
 
 ### mfa-sms
@@ -157,6 +220,27 @@ app.register(authPlugin, {
 |--------|--------------------------|--------------------------------------------------------------------------|
 | `POST` | `/sessions`              | Authenticate with password; create SMS code, call `onSmsCodeCreated`   |
 | `POST` | `/sessions/verify-code`  | Verify token + SMS code; return access + refresh tokens                 |
+
+**Example**
+
+```bash
+curl -X POST http://localhost:3000/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"identifier": "alice", "password": "correct horse battery staple"}'
+# 201
+# { "token": "...", "message": "Authentication successful. SMS code sent to verify authentication" }
+
+curl -X POST http://localhost:3000/sessions/verify-code \
+  -H "Content-Type: application/json" \
+  -d '{"token": "<token from the previous step>", "code": "<code from onSmsCodeCreated>"}'
+# 201
+# {
+#   "access_token": "...",
+#   "refresh_token": "...",
+#   "access_token_expires_at": "2026-08-31T12:15:00.000Z",
+#   "refresh_token_expires_at": "2026-09-07T12:00:00.000Z"
+# }
+```
 
 ---
 
@@ -193,6 +277,50 @@ app.register(authPlugin, {
 | `POST` | `/auth/mfa/verify`                      | ✓             | Verify a TOTP code (confirm setup)                       |
 | `POST` | `/auth/mfa/disable`                     | ✓             | Disable MFA with password + TOTP code                    |
 | `POST` | `/auth/mfa/disable-with-recovery-code`  | ✓             | Disable MFA with password + recovery code                |
+
+**Example: enabling and using TOTP MFA**
+
+```bash
+# 1. Sign up - MFA isn't enabled yet, so you get a session back immediately
+curl -X POST http://localhost:3000/signup \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "email": "alice@example.com", "password": "correct horse battery staple", "mobile_number": "+15551234567"}'
+# 201 → { access_token, refresh_token, access_token_expires_at, refresh_token_expires_at }
+
+# 2. Set up MFA (protected) - returns a QR code image for an authenticator app
+curl -X POST http://localhost:3000/auth/mfa/setup \
+  -H "Authorization: Bearer <access_token>"
+# 200 → { "qrCodeImageData": "data:image/png;base64,..." }
+
+# 3. Confirm setup with a code from the authenticator app
+curl -X POST http://localhost:3000/auth/mfa/verify \
+  -H "Authorization: Bearer <access_token>" -H "Content-Type: application/json" \
+  -d '{"token": "123456"}'
+# 200 → { "message": "TOTP token verified successfully" }
+
+# 4. Generate recovery codes for account-recovery scenarios
+curl -X POST http://localhost:3000/auth/mfa/recovery-codes \
+  -H "Authorization: Bearer <access_token>"
+# 201 → { "codes": ["ABCD-1234", "..."] }  (10 one-time codes)
+
+# 5. On a later login, MFA is now required - you get an mfa token, not a session
+curl -X POST http://localhost:3000/login \
+  -H "Content-Type: application/json" \
+  -d '{"identifier": "alice", "password": "correct horse battery staple"}'
+# 201 → { "token": "<mfa_token>" }
+
+# 6. Exchange the mfa token + a TOTP code (or a recovery code) for a session
+curl -X POST http://localhost:3000/login/mfa \
+  -H "Content-Type: application/json" \
+  -d '{"token": "<mfa_token>", "code": "123456"}'
+# 201 → { access_token, refresh_token, access_token_expires_at, refresh_token_expires_at }
+```
+
+To disable MFA, `POST /auth/mfa/disable` with
+`{ "password": "...", "code": "<totp code>" }`, or
+`POST /auth/mfa/disable-with-recovery-code` with
+`{ "password": "...", "code": "<recovery code>" }` - both protected routes,
+both return `{ "message": "MFA TOTP disabled successfully" }`.
 
 ---
 
@@ -237,6 +365,27 @@ app.register(authPlugin, {
 | `POST` | `/reset-password`           | Validate selector + token; update user password                        |
 
 The `POST /forgot-password` route always returns the same neutral message regardless of whether the account exists, to prevent user enumeration.
+
+**Example**
+
+```bash
+curl -X POST http://localhost:3000/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{"identifier": "alice@example.com"}'
+# 200
+# { "message": "If an account with that username/email exists, we've sent password reset instructions." }
+
+# selector/token come from the reset link your onForgotPasswordRequested hook sent
+curl "http://localhost:3000/reset-password/<selector>?token=<token>"
+# 200
+# { "message": "Password reset token is valid" }
+
+curl -X POST http://localhost:3000/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "<selector>", "token": "<token>", "password": "new password", "password_confirmation": "new password"}'
+# 200
+# { "message": "Password reset successfully" }
+```
 
 ## Protecting routes
 
