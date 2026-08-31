@@ -19,6 +19,7 @@ Choose a strategy and the plugin registers the matching HTTP routes, handles tok
 - [Web vs API clients](#web-vs-api-clients)
 - [Model interfaces](#model-interfaces)
 - [TypeScript](#typescript)
+- [FAQs](#faqs)
 
 ## Install
 
@@ -564,6 +565,51 @@ import type {
   ForgotPasswordRequestedParams,
 } from '@anephenix/fastify-auth';
 ```
+
+## FAQs
+
+### Can I support both password login and magic-link sign-in in the same app?
+
+Yes - register the plugin twice on the same Fastify instance, once per strategy:
+
+```typescript
+app.register(authPlugin, {
+  strategy: 'sessions',
+  auth,
+  models: { User, Session },
+});
+
+app.register(authPlugin, {
+  strategy: 'magic-links',
+  auth,
+  models: { User, Session, MagicLink },
+  hooks: {
+    onMagicLinkCreated: async ({ user, token, code }) => {
+      await emailQueue.add({ to: user.email, token, code });
+    },
+  },
+});
+```
+
+This works because the plugin is registered via `fastify-plugin`, so each
+registration adds its routes straight onto your app instance rather than
+into its own isolated context. The route sets don't collide - `sessions`
+owns `/signup`, `/login`, `/profile`, `/logout`, `/auth/refresh` and
+`/sessions*`; `magic-links` only adds `/magic-links` and
+`/magic-links/verify`. Both strategies also create `Session` rows the same
+way, so a session created via a magic link is indistinguishable from one
+created via password - `/profile`, `/logout` and session
+listing/revocation from the `sessions` strategy work for magic-link users
+too, with no extra wiring.
+
+The one gap to know about: **`magic-links` has no signup route of its
+own.** `POST /magic-links` looks up the user by email and errors with
+"User not found for email" if there's no match - it doesn't create
+accounts. A brand-new user needs to go through the `sessions` strategy's
+`POST /signup` first (which currently requires a `password`), and can then
+log in either way afterwards. For a true "sign up via magic link, no
+password ever set" flow, you'd need your own small custom signup route
+rather than relying on the bundled one.
 
 ## License
 
