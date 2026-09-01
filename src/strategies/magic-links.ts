@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { createSession } from "../core/session.js";
 import { handleError } from "../helpers/handle-error.js";
 import type { AuthFastifyPluginOptions } from "../types.js";
 
@@ -92,24 +93,8 @@ export function registerMagicLinksStrategy(
 
 				const { userId } = await MagicLink.verifyTokenAndCode(token, code);
 
-				const session = await Session.query().insert({
-					user_id: userId,
-					...Session.generateTokens(),
-				});
-
-				const {
-					access_token,
-					refresh_token,
-					access_token_expires_at,
-					refresh_token_expires_at,
-				} = session;
-
-				reply.code(201).send({
-					access_token,
-					refresh_token,
-					access_token_expires_at,
-					refresh_token_expires_at,
-				});
+				const tokens = await createSession(Session, userId);
+				reply.code(201).send(tokens);
 			} catch (err) {
 				reply.status(400).send({ error: handleError(err as Error) });
 			}

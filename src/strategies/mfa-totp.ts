@@ -1,52 +1,17 @@
-import crypto from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { authenticator } from "otplib";
 import qrcode from "qrcode";
+import { issueMfaChallenge } from "../core/mfa-gate.js";
+import { verifyPassword } from "../core/password.js";
+import { createSession } from "../core/session.js";
+import {
+	buildTotpCrypto,
+	verifyRecoveryCode,
+	verifyTotpCode,
+} from "../core/totp.js";
 import { handleError } from "../helpers/handle-error.js";
 import { createAuthenticateSession } from "../middleware/authenticate.js";
-import type { AuthFastifyPluginOptions, TotpOptions } from "../types.js";
-
-// ─── TOTP secret encryption helpers ──────────────────────────────────────────
-
-const IV_LENGTH = 12; // 12-byte IV recommended for AES-256-GCM
-
-function buildTotpCrypto(opts: TotpOptions) {
-	const { secretEncryptionKey } = opts;
-	if (!secretEncryptionKey || secretEncryptionKey.length !== 64) {
-		throw new Error(
-			"totp.secretEncryptionKey must be a 64-character hex string (32 bytes). " +
-				"Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
-		);
-	}
-
-	const KEY = Buffer.from(secretEncryptionKey, "hex");
-
-	return {
-		encrypt(secret: string): string {
-			const iv = crypto.randomBytes(IV_LENGTH);
-			const cipher = crypto.createCipheriv("aes-256-gcm", KEY, iv);
-			const encrypted = Buffer.concat([
-				cipher.update(secret, "utf8"),
-				cipher.final(),
-			]);
-			const authTag = cipher.getAuthTag();
-			return Buffer.concat([iv, encrypted, authTag]).toString("base64");
-		},
-
-		decrypt(encryptedBase64: string): string {
-			const data = Buffer.from(encryptedBase64, "base64");
-			const iv = data.subarray(0, IV_LENGTH);
-			const authTag = data.subarray(data.length - 16); // GCM tag is always 16 bytes
-			const encrypted = data.subarray(IV_LENGTH, data.length - 16);
-			const decipher = crypto.createDecipheriv("aes-256-gcm", KEY, iv);
-			decipher.setAuthTag(authTag);
-			return Buffer.concat([
-				decipher.update(encrypted),
-				decipher.final(),
-			]).toString("utf8");
-		},
-	};
-}
+import type { AuthFastifyPluginOptions } from "../types.js";
 
 // ─── Strategy ─────────────────────────────────────────────────────────────────
 
@@ -113,24 +78,8 @@ export function registerMfaTotpStrategy(
 				mobile_number,
 			});
 
-			const session = await Session.query().insert({
-				user_id: user.id,
-				...Session.generateTokens(),
-			});
-
-			const {
-				access_token,
-				refresh_token,
-				access_token_expires_at,
-				refresh_token_expires_at,
-			} = session;
-
-			return reply.status(201).send({
-				access_token,
-				refresh_token,
-				access_token_expires_at,
-				refresh_token_expires_at,
-			});
+			const tokens = await createSession(Session, user.id);
+			return reply.status(201).send(tokens);
 		} catch (error) {
 			reply.status(400).send({ error: handleError(error as Error) });
 		}
@@ -145,48 +94,19 @@ export function registerMfaTotpStrategy(
 				password: string;
 			};
 
-			if (!identifier) {
-				throw new Error("Please provide your username or email address");
-			}
-			if (!password) throw new Error("Password is required");
-
-			const user = await User.authenticate({ identifier, password });
+			const user = await verifyPassword(User, identifier, password);
 			if (!user) {
 				return reply.status(401).send({ error: "Invalid credentials" });
 			}
 
 			// User.authenticate returns { id, username, isUsingMFA } for this strategy
 			if (user.isUsingMFA) {
-				const { token, expiresAt } = await auth.generateMfaLoginToken();
-
-				await MfaToken.query().insert({
-					user_id: user.id,
-					token,
-					expires_at: expiresAt.toISOString(),
-					number_of_attempts: 0,
-				});
-
-				return reply.status(201).send({ token });
+				const challenge = await issueMfaChallenge(MfaToken, auth, user.id);
+				return reply.status(201).send(challenge);
 			}
 
-			const session = await Session.query().insert({
-				user_id: user.id,
-				...Session.generateTokens(),
-			});
-
-			const {
-				access_token,
-				refresh_token,
-				access_token_expires_at,
-				refresh_token_expires_at,
-			} = session;
-
-			return reply.status(201).send({
-				access_token,
-				refresh_token,
-				access_token_expires_at,
-				refresh_token_expires_at,
-			});
+			const tokens = await createSession(Session, user.id);
+			return reply.status(201).send(tokens);
 		} catch (error) {
 			reply.status(401).send({ error: handleError(error as Error) });
 		}
@@ -234,7 +154,8 @@ export function registerMfaTotpStrategy(
 				}
 
 				if (recovery_code) {
-					const isValid = await RecoveryCode.checkForRecoveryCodeAndConsume(
+					const isValid = await verifyRecoveryCode(
+						RecoveryCode,
 						user.id,
 						recovery_code,
 					);
@@ -242,33 +163,21 @@ export function registerMfaTotpStrategy(
 						return reply.status(400).send({ error: "Invalid recovery code" });
 					}
 				} else {
-					const secret = totpCrypto.decrypt(user.mfa_totp_secret);
-					const isValid = authenticator.check(code as string, secret);
+					const isValid = verifyTotpCode(
+						totpCrypto,
+						user.mfa_totp_secret,
+						code as string,
+					);
 					if (!isValid) {
 						await mfaToken.$query().increment("number_of_attempts", 1);
 						return reply.status(400).send({ error: "Invalid code" });
 					}
 				}
 
-				const session = await Session.query().insert({
-					user_id: mfaToken.user_id,
-					...Session.generateTokens(),
-				});
+				const tokens = await createSession(Session, mfaToken.user_id);
 				await mfaToken.$query().patch({ used_at: new Date().toISOString() });
 
-				const {
-					access_token,
-					refresh_token,
-					access_token_expires_at,
-					refresh_token_expires_at,
-				} = session;
-
-				return reply.status(201).send({
-					access_token,
-					refresh_token,
-					access_token_expires_at,
-					refresh_token_expires_at,
-				});
+				return reply.status(201).send(tokens);
 			} catch (error) {
 				reply.status(401).send({ error: handleError(error as Error) });
 			}
@@ -337,8 +246,7 @@ export function registerMfaTotpStrategy(
 			const user = request.user;
 			if (!user) return reply.status(401).send({ error: "Unauthorized" });
 
-			const secret = totpCrypto.decrypt(user.mfa_totp_secret);
-			const isValid = authenticator.check(token, secret);
+			const isValid = verifyTotpCode(totpCrypto, user.mfa_totp_secret, token);
 
 			if (!isValid) {
 				return reply.status(400).send({ error: "Invalid TOTP token" });
@@ -369,8 +277,7 @@ export function registerMfaTotpStrategy(
 				});
 				if (!isPasswordValid) throw new Error("Invalid password");
 
-				const secret = totpCrypto.decrypt(user.mfa_totp_secret);
-				if (!authenticator.check(code, secret)) {
+				if (!verifyTotpCode(totpCrypto, user.mfa_totp_secret, code)) {
 					throw new Error("Invalid MFA TOTP code");
 				}
 
@@ -406,8 +313,11 @@ export function registerMfaTotpStrategy(
 				});
 				if (!isPasswordValid) throw new Error("Invalid password");
 
-				const isRecoveryCodeValid =
-					await RecoveryCode.checkForRecoveryCodeAndConsume(user.id, code);
+				const isRecoveryCodeValid = await verifyRecoveryCode(
+					RecoveryCode,
+					user.id,
+					code,
+				);
 				if (!isRecoveryCodeValid) throw new Error("Invalid Recovery code");
 
 				await user.$query().patch({ mfa_totp_secret: null });

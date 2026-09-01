@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { validateResetToken } from "../core/forgot-password.js";
 import type { AuthFastifyPluginOptions } from "../types.js";
 
 const isEmail = (value: string): boolean =>
@@ -79,31 +80,14 @@ export function registerForgottenPasswordStrategy(
 					.send({ error: "Invalid reset password selector or token" });
 			}
 
-			const record = await ForgotPassword.query()
-				.where("selector", selector)
-				.first();
-
-			if (!record) {
-				return reply
-					.status(400)
-					.send({ error: "Invalid reset password selector or token" });
-			}
-			if (record.expires_at < new Date()) {
-				return reply
-					.status(400)
-					.send({ error: "Password reset token has expired" });
-			}
-			if (record.used_at) {
-				return reply
-					.status(400)
-					.send({ error: "Password reset token has already been used" });
-			}
-
-			const isTokenValid = await auth.verifyPassword(token, record.token_hash);
-			if (!isTokenValid) {
-				return reply
-					.status(400)
-					.send({ error: "Invalid reset password selector or token" });
+			const result = await validateResetToken({
+				ForgotPassword,
+				auth,
+				selector,
+				token,
+			});
+			if (!result.valid) {
+				return reply.status(400).send({ error: result.error });
 			}
 
 			return reply.send({ message: "Password reset token is valid" });
@@ -145,34 +129,17 @@ export function registerForgottenPasswordStrategy(
 					.send({ error: "Invalid reset password selector or token" });
 			}
 
-			const record = await ForgotPassword.query()
-				.where("selector", selector)
-				.first();
-
-			if (!record) {
-				return reply
-					.status(400)
-					.send({ error: "Invalid reset password selector or token" });
-			}
-			if (record.expires_at < new Date()) {
-				return reply
-					.status(400)
-					.send({ error: "Password reset token has expired" });
-			}
-			if (record.used_at) {
-				return reply
-					.status(400)
-					.send({ error: "Password reset token has already been used" });
+			const result = await validateResetToken({
+				ForgotPassword,
+				auth,
+				selector,
+				token,
+			});
+			if (!result.valid) {
+				return reply.status(400).send({ error: result.error });
 			}
 
-			const isTokenValid = await auth.verifyPassword(token, record.token_hash);
-			if (!isTokenValid) {
-				return reply
-					.status(400)
-					.send({ error: "Invalid reset password selector or token" });
-			}
-
-			const user = await User.query().findById(record.user_id);
+			const user = await User.query().findById(result.record.user_id);
 			if (!user) {
 				return reply.status(400).send({
 					error: "User not found for this password reset request",
@@ -180,7 +147,7 @@ export function registerForgottenPasswordStrategy(
 			}
 
 			await user.updatePassword(password);
-			await record.markAsUsed();
+			await result.record.markAsUsed();
 
 			return reply.send({ message: "Password reset successfully" });
 		},

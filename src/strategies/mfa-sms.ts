@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { verifyPassword } from "../core/password.js";
+import { createSession } from "../core/session.js";
 import { handleError } from "../helpers/handle-error.js";
 import type { AuthFastifyPluginOptions } from "../types.js";
 
@@ -40,12 +42,7 @@ export function registerMfaSmsStrategy(
 					password: string;
 				};
 
-				if (!identifier) {
-					throw new Error("Please provide your username or email address");
-				}
-				if (!password) throw new Error("Password is required");
-
-				const user = await User.authenticate({ identifier, password });
+				const user = await verifyPassword(User, identifier, password);
 				if (!user) {
 					return reply.status(401).send({ error: "Invalid credentials" });
 				}
@@ -115,24 +112,8 @@ export function registerMfaSmsStrategy(
 
 				await smsCode.$query().patch({ used_at: new Date().toISOString() });
 
-				const session = await Session.query().insert({
-					user_id: smsCode.user_id,
-					...Session.generateTokens(),
-				});
-
-				const {
-					access_token,
-					refresh_token,
-					access_token_expires_at,
-					refresh_token_expires_at,
-				} = session;
-
-				return reply.status(201).send({
-					access_token,
-					refresh_token,
-					access_token_expires_at,
-					refresh_token_expires_at,
-				});
+				const tokens = await createSession(Session, smsCode.user_id);
+				return reply.status(201).send(tokens);
 			} catch (error) {
 				reply.status(401).send({ error: handleError(error as Error) });
 			}
