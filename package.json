@@ -9,6 +9,11 @@
 		".": {
 			"import": "./dist/index.js",
 			"require": "./dist/index.js"
+		},
+		"./middleware/authenticate": {
+			"types": "./dist/middleware/authenticate.d.ts",
+			"import": "./dist/middleware/authenticate.js",
+			"require": "./dist/middleware/authenticate.js"
 		}
 	},
 	"types": "./dist/index.d.ts",
