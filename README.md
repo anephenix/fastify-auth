@@ -432,6 +432,7 @@ interface IUserModel {
   email?: string;
   mobile_number?: string;     // required for mfa-sms
   mfa_totp_secret?: string | null;  // required for mfa-totp
+  updatePassword?(password: string): Promise<void>; // required for forgotten-password
   $query(): QueryBuilder;
   $relatedQuery(relation: string): QueryBuilder;
 }

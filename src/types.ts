@@ -31,6 +31,8 @@ export interface IUserModel {
 	email?: string;
 	mobile_number?: string;
 	mfa_totp_secret?: string | null;
+	/** Required for the 'forgotten-password' strategy. */
+	updatePassword?(password: string): Promise<void>;
 	$query(): QueryBuilder;
 	$relatedQuery(relation: string): QueryBuilder;
 }
