@@ -7,13 +7,15 @@ import type { WizardSelections } from "./types.js";
   Auth instance, and avoids a circular import between models/User.ts and
   routes/auth.ts.
 */
-export function authLibTemplate({ totp }: WizardSelections): string {
-	const totpImport = totp
-		? `import { buildTotpCrypto } from "@anephenix/fastify-auth/core";\n`
-		: "";
+export function authLibTemplate({ mfa }: WizardSelections): string {
+	const totpImport =
+		mfa === "totp"
+			? `import { buildTotpCrypto } from "@anephenix/fastify-auth/core";\n`
+			: "";
 
-	const totpExport = totp
-		? `
+	const totpExport =
+		mfa === "totp"
+			? `
 // TOTP secrets are encrypted at rest - generate a key with:
 //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 // and set it as TOTP_SECRET_ENCRYPTION_KEY in your environment.
@@ -22,7 +24,7 @@ export const totpCrypto = buildTotpCrypto({
 	secretEncryptionKey: process.env.TOTP_SECRET_ENCRYPTION_KEY as string,
 });
 `
-		: "";
+			: "";
 
 	return `import { Auth } from "@anephenix/auth";
 ${totpImport}

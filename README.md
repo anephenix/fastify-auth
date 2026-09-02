@@ -626,16 +626,18 @@ awareness at all). For that, generate a custom combined setup instead:
 npx @anephenix/fastify-auth wizard
 ```
 
-This walks through four yes/no questions - password login, magic-link
-login, optional TOTP MFA on top, and forgotten-password (only asked if
-password login is selected) - then generates a working combination under
-`src/` (`--output <dir>` to change that, `--force` to overwrite existing
-generated files):
+This walks through a few questions - password login, magic-link login, an
+optional MFA method on top (**None / TOTP / SMS** - a generated app
+supports at most one second-factor mechanism, opt-in per user either way),
+and forgotten-password (only asked if password login is selected) - then
+generates a working combination under `src/` (`--output <dir>` to change
+that, `--force` to overwrite existing generated files):
 
 ```
 src/lib/auth.ts          # the shared Auth instance (+ TotpCrypto if TOTP was selected)
-src/models/User.ts       # + Session.ts, and MagicLink.ts / MfaToken.ts / RecoveryCode.ts /
-                          #   ForgotPassword.ts for whichever features were selected
+src/models/User.ts       # + Session.ts, and MagicLink.ts / ForgotPassword.ts for whichever
+                          #   features were selected, plus either MfaToken.ts + RecoveryCode.ts
+                          #   (TOTP) or SmsCode.ts (SMS), depending on the MFA choice
 src/routes/auth.ts       # the composed routes
 src/index.ts             # only created if one doesn't already exist
 ```
@@ -649,11 +651,14 @@ management handlers, and so on - rather than being copied inline, so
 security-relevant logic stays in one place and picks up fixes when you
 upgrade the package. The generated code is yours to edit freely from there.
 
-Selecting both magic-link and TOTP produces something the built-in
-strategies don't: `/magic-links/verify` checks the user's TOTP status and
-issues an MFA challenge instead of a session when it's enabled, so a magic
-link can't be used to bypass MFA the way it could with the `magic-links`
-strategy alone.
+Selecting both magic-link and an MFA method produces something the
+built-in strategies don't: `/magic-links/verify` checks the user's MFA
+status and issues a challenge instead of a session when it's enabled, so a
+magic link can't be used to bypass MFA the way it could with the
+`magic-links` strategy alone. SMS MFA generated this way is also opt-in
+per user (via `/auth/mfa/sms/setup`) - unlike the standalone `mfa-sms`
+strategy, which requires it for every password login with no per-user
+toggle.
 
 If TOTP is selected, install its two dependencies and set an encryption key:
 
@@ -662,6 +667,10 @@ npm i otplib qrcode
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 # set the output as TOTP_SECRET_ENCRYPTION_KEY in your environment
 ```
+
+If SMS is selected, wire up your SMS provider where the generated
+`/login/mfa` and `/auth/mfa/sms/setup` code currently just `console.log()`s
+the code instead of sending it.
 
 ## FAQs
 

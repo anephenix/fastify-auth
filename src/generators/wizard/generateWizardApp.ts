@@ -10,6 +10,7 @@ import {
 	mfaTokenModelTemplate,
 	recoveryCodeModelTemplate,
 	sessionModelTemplate,
+	smsCodeModelTemplate,
 	userModelTemplate,
 } from "./modelTemplates.js";
 import type { WizardSelections } from "./types.js";
@@ -84,7 +85,7 @@ export function generateWizardApp({
 		);
 	}
 
-	if (selections.totp) {
+	if (selections.mfa === "totp") {
 		files.push(
 			writeFile(
 				path.join(outputDir, "models", "MfaToken.ts"),
@@ -94,6 +95,16 @@ export function generateWizardApp({
 			writeFile(
 				path.join(outputDir, "models", "RecoveryCode.ts"),
 				recoveryCodeModelTemplate(),
+				force,
+			),
+		);
+	}
+
+	if (selections.mfa === "sms") {
+		files.push(
+			writeFile(
+				path.join(outputDir, "models", "SmsCode.ts"),
+				smsCodeModelTemplate(),
 				force,
 			),
 		);

@@ -9,14 +9,21 @@ import type { WizardSelections } from "../../../src/generators/wizard/types.js";
 const fullCombo: WizardSelections = {
 	password: true,
 	magicLink: true,
-	totp: true,
+	mfa: "totp",
+	forgotPassword: true,
+};
+
+const smsCombo: WizardSelections = {
+	password: true,
+	magicLink: true,
+	mfa: "sms",
 	forgotPassword: true,
 };
 
 const passwordOnly: WizardSelections = {
 	password: true,
 	magicLink: false,
-	totp: false,
+	mfa: "none",
 	forgotPassword: false,
 };
 
@@ -66,6 +73,14 @@ describe("generateWizardApp", () => {
 		assert.ok(!fs.existsSync(path.join(tmpDir, "models", "MagicLink.ts")));
 		assert.ok(!fs.existsSync(path.join(tmpDir, "models", "MfaToken.ts")));
 		assert.ok(!fs.existsSync(path.join(tmpDir, "models", "ForgotPassword.ts")));
+	});
+
+	it("creates models/SmsCode.ts (and not MfaToken/RecoveryCode) for the SMS combo", () => {
+		generateWizardApp({ selections: smsCombo, outputDir: tmpDir });
+
+		assert.ok(fs.existsSync(path.join(tmpDir, "models", "SmsCode.ts")));
+		assert.ok(!fs.existsSync(path.join(tmpDir, "models", "MfaToken.ts")));
+		assert.ok(!fs.existsSync(path.join(tmpDir, "models", "RecoveryCode.ts")));
 	});
 
 	it("skips existing files on a second run without force", () => {

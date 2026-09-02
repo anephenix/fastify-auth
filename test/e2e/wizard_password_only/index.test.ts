@@ -23,7 +23,7 @@ beforeAll(async () => {
 		authRoutesTemplate({
 			password: true,
 			magicLink: false,
-			totp: false,
+			mfa: "none",
 			forgotPassword: false,
 		}),
 	);

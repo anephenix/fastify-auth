@@ -11,6 +11,7 @@ import {
 	mfaTokenModelTemplate,
 	recoveryCodeModelTemplate,
 	sessionModelTemplate,
+	smsCodeModelTemplate,
 	userModelTemplate,
 } from "../../../src/generators/wizard/modelTemplates.js";
 import type { WizardSelections } from "../../../src/generators/wizard/types.js";
@@ -21,22 +22,28 @@ function selections(
 	return {
 		password: false,
 		magicLink: false,
-		totp: false,
+		mfa: "none",
 		forgotPassword: false,
 		...overrides,
 	};
 }
 
 describe("authLibTemplate", () => {
-	it("only exports totpCrypto when totp is selected", () => {
+	it("only exports totpCrypto when mfa is totp", () => {
 		expect(authLibTemplate(selections())).not.toContain("totpCrypto");
 		expect(authLibTemplate(selections())).not.toContain("buildTotpCrypto");
 
-		const withTotp = authLibTemplate(selections({ totp: true }));
+		const withTotp = authLibTemplate(selections({ mfa: "totp" }));
 		expect(withTotp).toContain("export const totpCrypto = buildTotpCrypto(");
 		expect(withTotp).toContain(
 			'import { buildTotpCrypto } from "@anephenix/fastify-auth/core";',
 		);
+	});
+
+	it("does not export totpCrypto when mfa is sms", () => {
+		const output = authLibTemplate(selections({ mfa: "sms" }));
+		expect(output).not.toContain("totpCrypto");
+		expect(output).not.toContain("buildTotpCrypto");
 	});
 
 	it("always exports the Auth instance", () => {
@@ -47,19 +54,29 @@ describe("authLibTemplate", () => {
 });
 
 describe("userModelTemplate", () => {
-	it("omits MFA fields/relations and returns the plain user when totp is not selected", () => {
+	it("omits MFA fields/relations and returns the plain user when mfa is none", () => {
 		const output = userModelTemplate(selections());
 		expect(output).not.toContain("mfa_totp_secret");
 		expect(output).not.toContain("recoveryCodes");
+		expect(output).not.toContain("sms_mfa_enabled");
 		expect(output).toContain("return user;");
 	});
 
-	it("adds mfa_totp_secret, the recoveryCodes relation, and isUsingMFA when totp is selected", () => {
-		const output = userModelTemplate(selections({ totp: true }));
+	it("adds mfa_totp_secret, the recoveryCodes relation, and isUsingMFA when mfa is totp", () => {
+		const output = userModelTemplate(selections({ mfa: "totp" }));
 		expect(output).toContain("mfa_totp_secret!: string | null;");
 		expect(output).toContain('import RecoveryCode from "./RecoveryCode.js";');
 		expect(output).toContain("recoveryCodes:");
 		expect(output).toContain("isUsingMFA: !!user.mfa_totp_secret");
+	});
+
+	it("adds sms_mfa_enabled and mobile_number, with no TOTP fields, when mfa is sms", () => {
+		const output = userModelTemplate(selections({ mfa: "sms" }));
+		expect(output).toContain("sms_mfa_enabled?: boolean;");
+		expect(output).toContain("mobile_number?: string;");
+		expect(output).not.toContain("mfa_totp_secret");
+		expect(output).not.toContain("recoveryCodes");
+		expect(output).toContain("return user;");
 	});
 
 	it("only adds updatePassword when forgotPassword is selected", () => {
@@ -101,6 +118,15 @@ describe("other model templates", () => {
 		const output = forgotPasswordModelTemplate();
 		expect(output).toContain("async markAsUsed()");
 	});
+
+	it("smsCodeModelTemplate matches the ISmsCodeModel contract", () => {
+		const output = smsCodeModelTemplate();
+		expect(output).toContain('return "sms_codes";');
+		expect(output).toContain("codeHasExpired(): boolean");
+		expect(output).toContain(
+			"async verifyCode(code: string): Promise<boolean>",
+		);
+	});
 });
 
 describe("authRoutesTemplate", () => {
@@ -119,31 +145,60 @@ describe("authRoutesTemplate", () => {
 
 	it("password + totp: /login gets an MFA branch and /login/mfa + /auth/mfa/* are registered", () => {
 		const output = authRoutesTemplate(
-			selections({ password: true, totp: true }),
+			selections({ password: true, mfa: "totp" }),
 		);
 		expect(output).toContain("if (user.isUsingMFA)");
 		expect(output).toContain('"/login/mfa"');
 		expect(output).toContain('"/auth/mfa/setup"');
 		expect(output).toContain('"/auth/mfa/recovery-codes"');
 		expect(output).toContain('"/auth/mfa/disable-with-recovery-code"');
+		expect(output).not.toContain("/auth/mfa/sms/");
+	});
+
+	it("password + sms: /login gets an SMS MFA branch and /login/mfa + /auth/mfa/sms/* are registered", () => {
+		const output = authRoutesTemplate(
+			selections({ password: true, mfa: "sms" }),
+		);
+		expect(output).toContain("if (user.sms_mfa_enabled)");
+		expect(output).toContain("auth.generateSmsCode()");
+		expect(output).toContain('"/login/mfa"');
+		expect(output).toContain('"/auth/mfa/sms/setup"');
+		expect(output).toContain('"/auth/mfa/sms/disable"');
+		// no TOTP-only imports/routes leak in
+		expect(output).not.toContain("issueMfaChallenge");
+		expect(output).not.toContain("otplib");
+		expect(output).not.toContain('"/auth/mfa/setup"');
+		expect(output).not.toContain('"/auth/mfa/recovery-codes"');
 	});
 
 	it("magicLink + totp: /magic-links/verify gets the MFA gate check", () => {
 		const output = authRoutesTemplate(
-			selections({ magicLink: true, totp: true }),
+			selections({ magicLink: true, mfa: "totp" }),
 		);
 		expect(output).toContain('"/magic-links/verify"');
-		expect(output).toContain("user?.mfa_totp_secret");
-		expect(output).toContain("issueMfaChallenge(MfaToken, auth, userId)");
+		expect(output).toContain("if (user.mfa_totp_secret)");
+		expect(output).toContain("issueMfaChallenge(MfaToken, auth, user.id)");
 		// no password selected, so no signup/login
 		expect(output).not.toContain('app.post("/signup"');
 		expect(output).not.toContain('app.post("/login"');
 	});
 
-	it("magicLink without totp: /magic-links/verify has no MFA gate", () => {
+	it("magicLink + sms: /magic-links/verify gets the SMS MFA gate check", () => {
+		const output = authRoutesTemplate(
+			selections({ magicLink: true, mfa: "sms" }),
+		);
+		expect(output).toContain('"/magic-links/verify"');
+		expect(output).toContain("if (user.sms_mfa_enabled)");
+		expect(output).toContain("SmsCode.query().insert(");
+		expect(output).not.toContain('app.post("/signup"');
+		expect(output).not.toContain('app.post("/login"');
+	});
+
+	it("magicLink without any MFA: /magic-links/verify has no MFA gate", () => {
 		const output = authRoutesTemplate(selections({ magicLink: true }));
 		expect(output).toContain('"/magic-links/verify"');
 		expect(output).not.toContain("mfa_totp_secret");
+		expect(output).not.toContain("sms_mfa_enabled");
 	});
 
 	it("forgotPassword adds the reset-password routes and imports validateResetToken", () => {
@@ -156,12 +211,12 @@ describe("authRoutesTemplate", () => {
 		expect(output).toContain("await user.updatePassword(password);");
 	});
 
-	it("the full combo registers every route", () => {
+	it("the full combo registers every route (totp)", () => {
 		const output = authRoutesTemplate(
 			selections({
 				password: true,
 				magicLink: true,
-				totp: true,
+				mfa: "totp",
 				forgotPassword: true,
 			}),
 		);
@@ -182,6 +237,37 @@ describe("authRoutesTemplate", () => {
 		]) {
 			expect(output).toContain(route);
 		}
+	});
+
+	it("the full combo registers every route (sms)", () => {
+		const output = authRoutesTemplate(
+			selections({
+				password: true,
+				magicLink: true,
+				mfa: "sms",
+				forgotPassword: true,
+			}),
+		);
+		for (const route of [
+			'"/signup"',
+			'"/login"',
+			'"/magic-links"',
+			'"/magic-links/verify"',
+			'"/login/mfa"',
+			'"/auth/mfa/sms/setup"',
+			'"/auth/mfa/sms/disable"',
+			'"/forgot-password"',
+			'"/reset-password"',
+			'"/profile"',
+			'"/logout"',
+			'"/auth/refresh"',
+			'"/sessions"',
+			'"/sessions/:id"',
+		]) {
+			expect(output).toContain(route);
+		}
+		expect(output).not.toContain('"/auth/mfa/setup"');
+		expect(output).not.toContain("issueMfaChallenge");
 	});
 });
 

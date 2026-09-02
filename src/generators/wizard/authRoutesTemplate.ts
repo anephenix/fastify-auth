@@ -6,14 +6,15 @@ import type { WizardSelections } from "./types.js";
   import the shared building blocks from the public @anephenix/fastify-auth/
   core and middleware/authenticate subpaths instead of relative paths.
 
-  The one genuinely new piece: when both magicLink and totp are selected,
-  /magic-links/verify checks the user's mfa_totp_secret and issues an MFA
-  challenge instead of creating a session directly - the built-in
-  magic-links strategy has no such check, so a TOTP-enabled user could
-  bypass MFA entirely via a magic link. Generated code closes that gap.
+  The one genuinely new piece: when magicLink is selected alongside an MFA
+  method (totp or sms), /magic-links/verify checks the user's MFA-enrolled
+  status and issues an MFA challenge instead of creating a session directly
+  - the built-in magic-links strategy has no such check, so an MFA-enrolled
+  user could bypass it entirely via a magic link. Generated code closes
+  that gap for whichever method was selected.
 */
 export function authRoutesTemplate(selections: WizardSelections): string {
-	const { password, magicLink, totp, forgotPassword } = selections;
+	const { password, magicLink, mfa, forgotPassword } = selections;
 
 	// ── Imports ────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ export function authRoutesTemplate(selections: WizardSelections): string {
 		"createDeleteSessionHandler",
 	]);
 	if (password) coreImports.add("verifyPassword");
-	if (totp) {
+	if (mfa === "totp") {
 		coreImports.add("issueMfaChallenge");
 		coreImports.add("verifyTotpCode");
 		coreImports.add("verifyRecoveryCode");
@@ -39,9 +40,12 @@ export function authRoutesTemplate(selections: WizardSelections): string {
 	modelImports.push('import Session from "../models/Session.js";');
 	if (magicLink)
 		modelImports.push('import MagicLink from "../models/MagicLink.js";');
-	if (totp) {
+	if (mfa === "totp") {
 		modelImports.push('import MfaToken from "../models/MfaToken.js";');
 		modelImports.push('import RecoveryCode from "../models/RecoveryCode.js";');
+	}
+	if (mfa === "sms") {
+		modelImports.push('import SmsCode from "../models/SmsCode.js";');
 	}
 	if (forgotPassword) {
 		modelImports.push(
@@ -49,10 +53,10 @@ export function authRoutesTemplate(selections: WizardSelections): string {
 		);
 	}
 
-	const authLibImports = totp ? "auth, totpCrypto" : "auth";
+	const authLibImports = mfa === "totp" ? "auth, totpCrypto" : "auth";
 
 	const extraImports: Array<string> = [];
-	if (totp) {
+	if (mfa === "totp") {
 		extraImports.push('import { authenticator } from "otplib";');
 		extraImports.push('import qrcode from "qrcode";');
 	}
@@ -60,9 +64,10 @@ export function authRoutesTemplate(selections: WizardSelections): string {
 		extraImports.push('import crypto from "node:crypto";');
 	}
 
-	const totpDepsComment = totp
-		? "\n// This file needs otplib and qrcode installed:\n//   npm i otplib qrcode\n"
-		: "";
+	const totpDepsComment =
+		mfa === "totp"
+			? "\n// This file needs otplib and qrcode installed:\n//   npm i otplib qrcode\n"
+			: "";
 
 	const imports = `import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 ${extraImports.sort().join("\n")}${extraImports.length ? "\n" : ""}import { createAuthenticateSession } from "@anephenix/fastify-auth/middleware/authenticate";
@@ -110,6 +115,64 @@ ${totpDepsComment}`;
 		createDeleteSessionHandler(Session),
 	);`;
 
+	function indentLines(block: string, indent: string): string {
+		return block
+			.split("\n")
+			.map((line) => (line ? indent + line : line))
+			.join("\n");
+	}
+
+	// The MFA gate a password/magic-link login hits after the first factor
+	// succeeds - issues a challenge instead of a session when the user has
+	// MFA enrolled. `userExpr` is how to reference the already-loaded user
+	// (`user` in /login, a freshly-looked-up `user` in /magic-links/verify);
+	// `replyFn` matches the surrounding block's existing reply-call style;
+	// `indent` matches the surrounding block's nesting depth. `totpCheckExpr`
+	// is the boolean expression that decides MFA-enrolled status in TOTP mode
+	// - it can't be hardcoded to `${userExpr}.isUsingMFA` because that flag is
+	// only computed inside User.authenticate()'s return value (the /login
+	// path, via verifyPassword); a plain User.query().findById() lookup (the
+	// /magic-links/verify path) has no such field, only the real
+	// mfa_totp_secret column.
+	function mfaLoginGate(
+		userExpr: string,
+		replyFn: "status" | "code",
+		indent: string,
+		totpCheckExpr: string,
+	): string {
+		let body: string;
+		if (mfa === "totp") {
+			body = `if (${totpCheckExpr}) {
+	const challenge = await issueMfaChallenge(MfaToken, auth, ${userExpr}.id);
+	return reply.${replyFn}(201).send(challenge);
+}`;
+		} else if (mfa === "sms") {
+			body = `if (${userExpr}.sms_mfa_enabled) {
+	const {
+		token: smsToken,
+		code: smsCode,
+		hashedCode,
+		expiresAt,
+	} = await auth.generateSmsCode();
+	await SmsCode.query().insert({
+		user_id: ${userExpr}.id,
+		token: smsToken,
+		hashed_code: hashedCode,
+		expires_at: expiresAt.toISOString(),
+	});
+	// TODO: send \`smsCode\` via SMS to ${userExpr}.mobile_number.
+	console.log(\`SMS MFA code for \${${userExpr}.mobile_number}: \${smsCode}\`);
+	return reply.${replyFn}(201).send({
+		token: smsToken,
+		message: "SMS code sent to verify authentication",
+	});
+}`;
+		} else {
+			return "";
+		}
+		return `\n${indentLines(body, indent)}\n`;
+	}
+
 	const passwordBlock = password
 		? `
 	// ── POST /signup ───────────────────────────────────────────────────────
@@ -144,16 +207,7 @@ ${totpDepsComment}`;
 			if (!user) {
 				return reply.status(401).send({ error: "Invalid credentials" });
 			}
-${
-	totp
-		? `
-			if (user.isUsingMFA) {
-				const challenge = await issueMfaChallenge(MfaToken, auth, user.id);
-				return reply.status(201).send(challenge);
-			}
-`
-		: ""
-}
+${mfaLoginGate("user", "status", "\t\t\t", "user.isUsingMFA")}
 			const tokens = await createSession(Session, user.id);
 			return respondWithNewSession({
 				request,
@@ -218,18 +272,14 @@ ${
 
 				const { userId } = await MagicLink.verifyTokenAndCode(token, code);
 ${
-	totp
+	mfa !== "none"
 		? `
 				// A magic link is still only a first factor - if this user has
-				// TOTP enabled, gate them the same way password login does.
+				// MFA enrolled, gate them the same way password login does.
 				const user = await User.query().findById(userId);
-				if (user?.mfa_totp_secret) {
-					const challenge = await issueMfaChallenge(MfaToken, auth, userId);
-					return reply.code(201).send(challenge);
-				}
 `
 		: ""
-}
+}${mfaLoginGate("user", "code", "\t\t\t\t", "user.mfa_totp_secret")}
 				const tokens = await createSession(Session, userId);
 				return respondWithNewSession({
 					request,
@@ -245,8 +295,9 @@ ${
 	);`
 		: "";
 
-	const totpBlock = totp
-		? `
+	const totpMfaBlock =
+		mfa === "totp"
+			? `
 	// ── POST /login/mfa ───────────────────────────────────────────────────
 
 	app.post(
@@ -470,7 +521,116 @@ ${
 			}
 		},
 	);`
-		: "";
+			: "";
+
+	const smsMfaBlock =
+		mfa === "sms"
+			? `
+	// ── POST /login/mfa ───────────────────────────────────────────────────
+
+	app.post(
+		"/login/mfa",
+		async (request: FastifyRequest, reply: FastifyReply) => {
+			const { token, code } = request.body as {
+				token?: string;
+				code?: string;
+			};
+
+			if (!token) {
+				return reply.status(400).send({ error: "Token is required" });
+			}
+			if (!code) {
+				return reply.status(400).send({ error: "Code is required" });
+			}
+
+			try {
+				const smsCode = await SmsCode.query().findOne({ token });
+				if (!smsCode) {
+					return reply.status(400).send({ error: "Invalid token" });
+				}
+				if (smsCode.used_at) {
+					return reply
+						.status(400)
+						.send({ error: "Code has already been used" });
+				}
+				if (smsCode.codeHasExpired()) {
+					return reply.status(400).send({ error: "Code has expired" });
+				}
+
+				const isCodeValid = await smsCode.verifyCode(code);
+				if (!isCodeValid) {
+					return reply.status(400).send({ error: "Invalid code" });
+				}
+
+				await smsCode.$query().patch({ used_at: new Date().toISOString() });
+
+				const tokens = await createSession(Session, smsCode.user_id);
+				return respondWithNewSession({
+					request,
+					reply,
+					auth,
+					secureCookie,
+					tokens,
+				});
+			} catch (error) {
+				reply.status(401).send({ error: (error as Error).message });
+			}
+		},
+	);
+
+	// ── POST /auth/mfa/sms/setup (protected) ────────────────────────────────
+
+	app.post(
+		"/auth/mfa/sms/setup",
+		{ preHandler: [authenticateSession] },
+		async (request: FastifyRequest, reply: FastifyReply) => {
+			const user = request.user;
+			if (!user) return reply.status(401).send({ error: "Unauthorized" });
+
+			const { mobile_number } = request.body as { mobile_number?: string };
+			if (!mobile_number) {
+				return reply.status(400).send({ error: "mobile_number is required" });
+			}
+
+			try {
+				await user.$query().patch({ mobile_number, sms_mfa_enabled: true });
+				return reply
+					.status(200)
+					.send({ message: "SMS MFA enabled successfully" });
+			} catch (error) {
+				reply.status(500).send({ error: (error as Error).message });
+			}
+		},
+	);
+
+	// ── POST /auth/mfa/sms/disable (protected) ──────────────────────────────
+
+	app.post(
+		"/auth/mfa/sms/disable",
+		{ preHandler: [authenticateSession] },
+		async (request: FastifyRequest, reply: FastifyReply) => {
+			const user = request.user;
+			const { password } = request.body as { password: string };
+			if (!user) return reply.status(401).send({ error: "Unauthorized" });
+
+			try {
+				const isPasswordValid = await User.authenticate({
+					identifier: user.username,
+					password,
+				});
+				if (!isPasswordValid) throw new Error("Invalid password");
+
+				await user.$query().patch({ sms_mfa_enabled: false });
+
+				return reply
+					.status(200)
+					.send({ message: "SMS MFA disabled successfully" });
+			} catch (error) {
+				reply.status(400).send({ error: (error as Error).message });
+			}
+		},
+	);`
+			: "";
 
 	const forgotPasswordBlock = forgotPassword
 		? `
@@ -608,7 +768,8 @@ export function registerAuthRoutes(app: FastifyInstance) {
 	const authenticateSession = createAuthenticateSession({ Session });
 ${passwordBlock}
 ${magicLinkBlock}
-${totpBlock}
+${totpMfaBlock}
+${smsMfaBlock}
 ${forgotPasswordBlock}
 
 ${sessionManagementBlock}

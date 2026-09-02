@@ -1,16 +1,23 @@
 #!/usr/bin/env node
 
 // Dependencies
-import { cancel, confirm, intro, isCancel, outro } from "@clack/prompts";
+import {
+	cancel,
+	confirm,
+	intro,
+	isCancel,
+	outro,
+	select,
+} from "@clack/prompts";
 import { generateWizardApp } from "./generators/wizard/generateWizardApp.js";
-import type { WizardSelections } from "./generators/wizard/types.js";
+import type { MfaMethod, WizardSelections } from "./generators/wizard/types.js";
 
 const usage = `Usage: fastify-auth wizard [--output <dir>] [--force]
 
   wizard    Interactively choose login methods (password, magic-link,
-            optional TOTP MFA, forgotten-password) and generate a working
-            combined auth setup - model stubs and a routes/auth.ts file
-            built on @anephenix/fastify-auth/core.
+            an optional MFA method on top, forgotten-password) and generate
+            a working combined auth setup - model stubs and a routes/auth.ts
+            file built on @anephenix/fastify-auth/core.
 
 Options:
   --output <dir>   Directory to generate files under (default: src)
@@ -54,6 +61,20 @@ async function askConfirm(
 	return answer;
 }
 
+async function askMfaMethod(): Promise<MfaMethod> {
+	const answer = await select<MfaMethod>({
+		message: "Add MFA on top of your chosen login method(s)?",
+		initialValue: "none",
+		options: [
+			{ value: "none", label: "None" },
+			{ value: "totp", label: "TOTP (authenticator app)" },
+			{ value: "sms", label: "SMS" },
+		],
+	});
+	if (isCancel(answer)) bail();
+	return answer;
+}
+
 async function runWizard(outputDir: string, force: boolean): Promise<void> {
 	intro("fastify-auth wizard");
 
@@ -65,10 +86,7 @@ async function runWizard(outputDir: string, force: boolean): Promise<void> {
 		process.exit(1);
 	}
 
-	const totp = await askConfirm(
-		"Add optional per-user TOTP MFA on top?",
-		false,
-	);
+	const mfa = await askMfaMethod();
 
 	const forgotPassword = password
 		? await askConfirm("Add forgotten-password support?", true)
@@ -77,7 +95,7 @@ async function runWizard(outputDir: string, force: boolean): Promise<void> {
 	const selections: WizardSelections = {
 		password,
 		magicLink,
-		totp,
+		mfa,
 		forgotPassword,
 	};
 
@@ -95,10 +113,17 @@ async function runWizard(outputDir: string, force: boolean): Promise<void> {
 		);
 	}
 
-	if (totp) {
+	if (mfa === "totp") {
 		console.log(
 			"\nTOTP MFA needs two extra dependencies: npm i otplib qrcode\n" +
 				"Also set TOTP_SECRET_ENCRYPTION_KEY in your environment - see lib/auth.ts.",
+		);
+	}
+
+	if (mfa === "sms") {
+		console.log(
+			"\nSMS MFA delivery is a TODO in the generated code (see routes/auth.ts) -\n" +
+				"wire up your SMS provider where it currently just console.log()s the code.",
 		);
 	}
 

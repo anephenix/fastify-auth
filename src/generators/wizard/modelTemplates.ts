@@ -9,17 +9,22 @@ import type { WizardSelections } from "./types.js";
 */
 
 export function userModelTemplate({
-	totp,
+	mfa,
 	forgotPassword,
 }: WizardSelections): string {
-	const mfaField = totp ? "\n\tmfa_totp_secret!: string | null;" : "";
+	const mfaField =
+		mfa === "totp"
+			? "\n\tmfa_totp_secret!: string | null;"
+			: mfa === "sms"
+				? "\n\tsms_mfa_enabled?: boolean;\n\tmobile_number?: string;"
+				: "";
 
-	const recoveryCodesImport = totp
-		? `import RecoveryCode from "./RecoveryCode.js";\n`
-		: "";
+	const recoveryCodesImport =
+		mfa === "totp" ? `import RecoveryCode from "./RecoveryCode.js";\n` : "";
 
-	const relationMappings = totp
-		? `
+	const relationMappings =
+		mfa === "totp"
+			? `
 	static get relationMappings() {
 		return {
 			recoveryCodes: {
@@ -33,7 +38,7 @@ export function userModelTemplate({
 		};
 	}
 `
-		: "";
+			: "";
 
 	const updatePasswordMethod = forgotPassword
 		? `
@@ -43,9 +48,10 @@ export function userModelTemplate({
 `
 		: "";
 
-	const authenticateReturn = totp
-		? "return Object.assign(user, { isUsingMFA: !!user.mfa_totp_secret });"
-		: "return user;";
+	const authenticateReturn =
+		mfa === "totp"
+			? "return Object.assign(user, { isUsingMFA: !!user.mfa_totp_secret });"
+			: "return user;";
 
 	return `import { Model } from "objection";
 ${recoveryCodesImport}import { auth } from "../lib/auth.js";
@@ -188,6 +194,35 @@ class MagicLink extends Model {
 }
 
 export default MagicLink;
+`;
+}
+
+export function smsCodeModelTemplate(): string {
+	return `import { Model } from "objection";
+import { auth } from "../lib/auth.js";
+
+class SmsCode extends Model {
+	id!: number;
+	user_id!: number;
+	token!: string;
+	hashed_code!: string;
+	expires_at!: string;
+	used_at?: string;
+
+	static get tableName() {
+		return "sms_codes";
+	}
+
+	codeHasExpired(): boolean {
+		return new Date(this.expires_at).getTime() < Date.now();
+	}
+
+	async verifyCode(code: string): Promise<boolean> {
+		return auth.verifyPassword(code, this.hashed_code);
+	}
+}
+
+export default SmsCode;
 `;
 }
 
