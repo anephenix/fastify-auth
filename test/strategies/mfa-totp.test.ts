@@ -207,6 +207,27 @@ describe("POST /signup", () => {
 		expect(body).toHaveProperty("access_token");
 		expect(body).toHaveProperty("refresh_token");
 	});
+
+	it("succeeds without mobile_number, and doesn't pass it to insert() at all", async () => {
+		const { app, User } = buildApp();
+		await app.ready();
+		const response = await app.inject({
+			method: "POST",
+			url: "/signup",
+			payload: {
+				username: "testuser",
+				email: "test@example.com",
+				password: "secret",
+			},
+		});
+		expect(response.statusCode).toBe(201);
+		const insert = User.query().insert as unknown as ReturnType<typeof vi.fn>;
+		expect(insert).toHaveBeenCalledWith({
+			username: "testuser",
+			email: "test@example.com",
+			password: "secret",
+		});
+	});
 });
 
 // ─── POST /login ──────────────────────────────────────────────────────────────

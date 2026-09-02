@@ -203,9 +203,9 @@ export function buildApp(): BuiltApp {
 				password?: string;
 				mobile_number?: string;
 			}) => {
-				const missing = (
-					["username", "email", "password", "mobile_number"] as const
-				).filter((field) => !data[field]);
+				const missing = (["username", "email", "password"] as const).filter(
+					(field) => !data[field],
+				);
 				if (missing.length) {
 					throw new Error(
 						`${missing.join(", ")} ${missing.length > 1 ? "are" : "is"} required`,
@@ -216,7 +216,7 @@ export function buildApp(): BuiltApp {
 						username: string;
 						email: string;
 						password: string;
-						mobile_number: string;
+						mobile_number?: string;
 					},
 				);
 			},

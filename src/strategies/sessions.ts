@@ -46,14 +46,22 @@ export function registerSessionsStrategy(
 	// ── POST /signup ─────────────────────────────────────────────────────────
 
 	app.post("/signup", async (request: FastifyRequest, reply: FastifyReply) => {
-		const { username, email, password } = request.body as {
+		const { username, email, password, mobile_number } = request.body as {
 			username: string;
 			email: string;
 			password: string;
+			// Optional - not needed for password login, but there if you want
+			// to collect it (e.g. to add mfa-sms/mfa-totp for this user later).
+			mobile_number?: string;
 		};
 
 		try {
-			const user = await User.query().insert({ username, email, password });
+			const user = await User.query().insert({
+				username,
+				email,
+				password,
+				...(mobile_number && { mobile_number }),
+			});
 			reply
 				.status(201)
 				.send({ id: user.id, username: user.username, email: user.email });

@@ -67,7 +67,9 @@ export function registerMfaTotpStrategy(
 			username: string;
 			email: string;
 			password: string;
-			mobile_number: string;
+			// Not used by TOTP itself - optional, so it's there if you later
+			// add mfa-sms or otherwise want to contact the user by phone.
+			mobile_number?: string;
 		};
 
 		try {
@@ -75,7 +77,7 @@ export function registerMfaTotpStrategy(
 				username,
 				email,
 				password,
-				mobile_number,
+				...(mobile_number && { mobile_number }),
 			});
 
 			const tokens = await createSession(Session, user.id);

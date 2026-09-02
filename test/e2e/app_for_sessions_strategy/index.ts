@@ -263,6 +263,7 @@ export function buildApp(): BuiltApp {
 						username: data.username,
 						email: data.email,
 						password: data.password,
+						...(data.mobile_number && { mobile_number: data.mobile_number }),
 					} as FakeUser;
 					users.push(user);
 					return Promise.resolve(user);

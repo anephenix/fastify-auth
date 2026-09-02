@@ -160,6 +160,48 @@ describe("POST /signup", () => {
 		expect(response.statusCode).toBe(400);
 		expect(response.json()).toMatchObject({ error: "email already exists." });
 	});
+
+	it("passes mobile_number through to insert() when provided", async () => {
+		const { app, User } = buildApp();
+		await app.ready();
+		await app.inject({
+			method: "POST",
+			url: "/signup",
+			payload: {
+				username: "testuser",
+				email: "test@example.com",
+				password: "secret",
+				mobile_number: "+15550001111",
+			},
+		});
+		const insert = User.query().insert as unknown as ReturnType<typeof vi.fn>;
+		expect(insert).toHaveBeenCalledWith({
+			username: "testuser",
+			email: "test@example.com",
+			password: "secret",
+			mobile_number: "+15550001111",
+		});
+	});
+
+	it("omits mobile_number from insert() entirely when not provided", async () => {
+		const { app, User } = buildApp();
+		await app.ready();
+		await app.inject({
+			method: "POST",
+			url: "/signup",
+			payload: {
+				username: "testuser",
+				email: "test@example.com",
+				password: "secret",
+			},
+		});
+		const insert = User.query().insert as unknown as ReturnType<typeof vi.fn>;
+		expect(insert).toHaveBeenCalledWith({
+			username: "testuser",
+			email: "test@example.com",
+			password: "secret",
+		});
+	});
 });
 
 // ─── POST /login ──────────────────────────────────────────────────────────────

@@ -84,8 +84,23 @@ describe("app_for_mfa_totp_strategy", () => {
 			});
 		});
 
+		describe("When mobile_number is not provided", () => {
+			it("should still create the user and return a session (mobile_number is optional)", async () => {
+				const { mobile_number: _mobile_number, ...aliceWithoutMobileNumber } =
+					ALICE;
+				const response = await ctx.app.inject({
+					method: "POST",
+					url: "/signup",
+					payload: aliceWithoutMobileNumber,
+				});
+				expect(response.statusCode).toBe(201);
+				expect(ctx.users).toHaveLength(1);
+				expect(ctx.users[0].mobile_number).toBeUndefined();
+			});
+		});
+
 		describe("When a user is invalid", () => {
-			// Such as... missing username, missing email, missing password, missing mobile number
+			// Such as... missing username, missing email, missing password
 			it("should a HTTP status 400, and an explanation of the error", async () => {
 				const response = await ctx.app.inject({
 					method: "POST",

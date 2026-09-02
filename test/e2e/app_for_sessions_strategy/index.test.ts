@@ -97,6 +97,25 @@ describe("app_for_sessions_strategy", () => {
 				expect(response.json()).toHaveProperty("id");
 			});
 		});
+
+		describe("when mobile_number is provided", () => {
+			it("should store it on the created user record (it's optional, not required)", async () => {
+				await ctx.app.inject({
+					method: "POST",
+					url: "/signup",
+					payload: { ...ALICE, mobile_number: "+15550001111" },
+				});
+				expect(ctx.users[0]).toMatchObject({ mobile_number: "+15550001111" });
+			});
+		});
+
+		describe("when mobile_number is not provided", () => {
+			it("should still create the user successfully", async () => {
+				const response = await signup(ctx);
+				expect(response.statusCode).toBe(201);
+				expect(ctx.users[0].mobile_number).toBeUndefined();
+			});
+		});
 	});
 
 	describe("POST /login", () => {
