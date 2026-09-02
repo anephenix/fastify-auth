@@ -247,6 +247,19 @@ curl -X POST http://localhost:3000/sessions/verify-code \
 # }
 ```
 
+**Don't register this alongside `sessions`.** `mfa-sms` gates `/sessions`,
+not `/login` - it has no route conflict with the `sessions` strategy, so
+Fastify will happily register both. But `sessions`' `/login` has no idea
+`mfa-sms` exists: anyone with valid credentials can call `/login` instead
+of `/sessions` and get a full session with no SMS step at all, for any
+user, every time - `mfa-sms` has no per-user opt-in, so there's nothing
+that distinguishes an SMS-gated login from a bypassed one except which
+endpoint was called. If you want password login that's optionally (or
+always) gated behind an SMS code on the *same* `/login` route, use the
+[CLI wizard](#cli-wizard)'s SMS MFA option instead - it generates a single
+`/login` that checks a per-user opt-in flag and gates itself, so there's
+no second, ungated path to the same account.
+
 ---
 
 ### mfa-totp
