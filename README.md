@@ -1,5 +1,7 @@
 # @anephenix/fastify-auth
 
+[![Node.js CI](https://github.com/anephenix/fastify-auth/actions/workflows/node.js.yml/badge.svg)](https://github.com/anephenix/fastify-auth/actions/workflows/node.js.yml)
+
 A Fastify 5 plugin that wires up authentication routes for your app using [@anephenix/auth](https://github.com/anephenix/auth) and your own ORM models (Objection.js or anything that satisfies the model interfaces).
 
 Choose a strategy and the plugin registers the matching HTTP routes, handles token generation and verification, and delegates side-effects (sending emails, SMS) to hooks you provide.
