@@ -44,7 +44,7 @@ npm i @fastify/cookie
 ## Prerequisites
 
 - Node.js >= 18
-- Fastify >= 5.0.0
+- Fastify >= 5.12.1 (earlier 5.x releases have a known [X-Forwarded-* spoofing issue](https://github.com/advisories/GHSA-3m5p-2c4r-xxw2) under `trustProxy`)
 - An `Auth` instance from `@anephenix/auth`
 - ORM models that satisfy the [model interfaces](#model-interfaces)
 
