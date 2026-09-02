@@ -3,3 +3,7 @@ dist
 coverage
 .claude
 TODO.md
+
+# Generated fresh by test/e2e/wizard_*/index.test.ts on every run from the
+# real authRoutesTemplate() output - never hand-edited, never committed.
+test/e2e/wizard_*/routes/

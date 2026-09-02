@@ -17,8 +17,10 @@ Choose a strategy and the plugin registers the matching HTTP routes, handles tok
   - [forgotten-password](#forgotten-password)
 - [Protecting routes](#protecting-routes)
 - [Web vs API clients](#web-vs-api-clients)
+- [Building blocks](#building-blocks)
 - [Model interfaces](#model-interfaces)
 - [TypeScript](#typescript)
+- [CLI wizard](#cli-wizard)
 - [FAQs](#faqs)
 
 ## Install
@@ -419,6 +421,48 @@ The `sessions` strategy detects the client type from the incoming request:
 
 The `secureCookie` plugin option controls whether the `Secure` flag is set on cookies. It defaults to `true` when `NODE_ENV === 'production'` and `false` otherwise.
 
+## Building blocks
+
+The five strategies above are themselves composed from a set of smaller,
+independently-tested functions exported from `@anephenix/fastify-auth/core`.
+They're documented here for anyone who wants to hand-assemble a custom
+combination that doesn't fit a single built-in strategy (e.g. password
+**and** magic-link login, with optional per-user TOTP layered on top of
+both) - which is exactly what the [CLI wizard](#cli-wizard) generates.
+
+```typescript
+import {
+  verifyPassword,
+  createSession,
+  respondWithNewSession,
+  respondWithRefreshedSession,
+  issueMfaChallenge,
+  buildTotpCrypto,
+  verifyTotpCode,
+  verifyRecoveryCode,
+  validateResetToken,
+  createProfileHandler,
+  createLogoutHandler,
+  createRefreshHandler,
+  createListSessionsHandler,
+  createDeleteAllSessionsHandler,
+  createDeleteSessionHandler,
+} from '@anephenix/fastify-auth/core';
+```
+
+| Export | What it does |
+|--------|---------------|
+| `verifyPassword(User, identifier, password)` | Validates identifier/password are present, then delegates to `User.authenticate()` - the shared first-factor check used by `sessions`, `mfa-sms` and `mfa-totp`. |
+| `createSession(Session, userId)` | Creates a `Session` record and returns just the token fields (`access_token`, `refresh_token`, `access_token_expires_at`, `refresh_token_expires_at`). |
+| `respondWithNewSession({ request, reply, auth, secureCookie, tokens })` | Sends a freshly-created session - `HttpOnly` cookies for web clients, JSON body for API clients (see [Web vs API clients](#web-vs-api-clients)). |
+| `respondWithRefreshedSession({ request, reply, auth, secureCookie, tokens })` | Same as above, but for a refreshed access token (only resets the `access_token` cookie, not `refresh_token`). |
+| `issueMfaChallenge(MfaToken, auth, userId)` | Generates and persists a short-lived MFA token, to hand back to the client instead of a session, when a user has MFA enabled. |
+| `buildTotpCrypto(totpOptions)` | Builds the AES-256-GCM encrypt/decrypt pair used to store TOTP secrets at rest. |
+| `verifyTotpCode(totpCrypto, encryptedSecret, code)` | Decrypts a stored TOTP secret and checks a code against it. |
+| `verifyRecoveryCode(RecoveryCode, userId, code)` | Verifies and consumes a one-time MFA recovery code. |
+| `validateResetToken({ ForgotPassword, auth, selector, token })` | Looks up and validates a password-reset record (not found/expired/used/mismatched token all report the same generic error). |
+| `createProfileHandler()` / `createLogoutHandler(Session)` / `createRefreshHandler({ Session, auth, secureCookie })` / `createListSessionsHandler(Session)` / `createDeleteAllSessionsHandler(Session)` / `createDeleteSessionHandler(Session)` | Route-handler factories for managing an existing session - `/profile`, `/logout`, `/auth/refresh`, listing and revoking sessions - independent of how that session was created (password, magic link, or MFA). |
+
 ## Model interfaces
 
 The plugin calls a fixed set of static and instance methods on each model. Your models can have additional fields; they just need to satisfy these contracts.
@@ -565,6 +609,56 @@ import type {
   SmsCodeCreatedParams,
   ForgotPasswordRequestedParams,
 } from '@anephenix/fastify-auth';
+```
+
+## CLI wizard
+
+The five strategies cover common cases, but some apps need a combination
+that doesn't fit any single one - e.g. **password and magic-link login,
+both optionally gated by the same per-user TOTP MFA**, which the built-in
+strategies can't do together (`mfa-totp` owns `/signup`/`/login` itself and
+can't be registered alongside `sessions`; `magic-links` has no MFA
+awareness at all). For that, generate a custom combined setup instead:
+
+```shell
+npx @anephenix/fastify-auth wizard
+```
+
+This walks through four yes/no questions - password login, magic-link
+login, optional TOTP MFA on top, and forgotten-password (only asked if
+password login is selected) - then generates a working combination under
+`src/` (`--output <dir>` to change that, `--force` to overwrite existing
+generated files):
+
+```
+src/lib/auth.ts          # the shared Auth instance (+ TotpCrypto if TOTP was selected)
+src/models/User.ts       # + Session.ts, and MagicLink.ts / MfaToken.ts / RecoveryCode.ts /
+                          #   ForgotPassword.ts for whichever features were selected
+src/routes/auth.ts       # the composed routes
+src/index.ts             # only created if one doesn't already exist
+```
+
+Unlike the model interfaces above (which you implement yourself), these
+are **real, working Objection.js model files** generated for you, and
+`routes/auth.ts` is built on the same [building blocks](#building-blocks)
+the five strategies use internally - `verifyPassword`, `createSession`,
+`issueMfaChallenge`, `verifyTotpCode`, `validateResetToken`, the session-
+management handlers, and so on - rather than being copied inline, so
+security-relevant logic stays in one place and picks up fixes when you
+upgrade the package. The generated code is yours to edit freely from there.
+
+Selecting both magic-link and TOTP produces something the built-in
+strategies don't: `/magic-links/verify` checks the user's TOTP status and
+issues an MFA challenge instead of a session when it's enabled, so a magic
+link can't be used to bypass MFA the way it could with the `magic-links`
+strategy alone.
+
+If TOTP is selected, install its two dependencies and set an encryption key:
+
+```shell
+npm i otplib qrcode
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# set the output as TOTP_SECRET_ENCRYPTION_KEY in your environment
 ```
 
 ## FAQs
