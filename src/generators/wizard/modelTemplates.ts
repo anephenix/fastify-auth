@@ -269,6 +269,9 @@ class RecoveryCode extends Model {
 	async $beforeInsert() {
 		if (this.code) {
 			this.hashed_code = await auth.hashPassword(this.code);
+			// code has no backing column - without this, Objection tries to
+			// insert it anyway and the query fails against a real database.
+			this.$omitFromDatabaseJson("code");
 		}
 	}
 

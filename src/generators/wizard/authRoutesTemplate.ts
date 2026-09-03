@@ -277,6 +277,7 @@ ${
 				// A magic link is still only a first factor - if this user has
 				// MFA enrolled, gate them the same way password login does.
 				const user = await User.query().findById(userId);
+				if (!user) throw new Error("User not found");
 `
 		: ""
 }${mfaLoginGate("user", "code", "\t\t\t\t", "user.mfa_totp_secret")}

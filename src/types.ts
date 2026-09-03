@@ -43,7 +43,7 @@ export interface IUserModelStatic {
 	authenticate(params: {
 		identifier: string;
 		password: string;
-	}): Promise<IUserModel & { isUsingMFA?: boolean }>;
+	}): Promise<(IUserModel & { isUsingMFA?: boolean }) | null>;
 }
 
 export interface ISessionModel {
@@ -135,8 +135,6 @@ export interface IRecoveryCodeModel {
 	code?: string;
 	hashed_code: string;
 	used_at?: string;
-	verify(code: string): Promise<boolean>;
-	markAsUsed(): Promise<void>;
 	$query(): QueryBuilder;
 }
 
