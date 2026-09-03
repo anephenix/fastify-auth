@@ -67,7 +67,7 @@
 		"@fastify/cookie": "^11.0.2",
 		"@size-limit/esbuild": "^12.1.0",
 		"@size-limit/esbuild-why": "^12.1.0",
-		"@size-limit/file": "^12.1.0",
+		"@size-limit/file": "^13.0.3",
 		"@types/node": "^22.0.0",
 		"@types/qrcode": "^1.5.5",
 		"@vitest/coverage-v8": "^4.1.4",
