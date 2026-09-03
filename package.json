@@ -1,6 +1,6 @@
 {
 	"name": "@anephenix/fastify-auth",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"description": "Fastify plugin for @anephenix/auth — drop-in route registration for password, magic-link, SMS MFA, TOTP MFA, and password-reset strategies",
 	"author": "Paul Jensen <paul@anephenix.com>",
 	"license": "MIT",
