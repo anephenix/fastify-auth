@@ -27,6 +27,24 @@ function windowHasExpired(auth: Auth, user: IUserModel | undefined | null) {
 }
 
 /*
+  IUserModel.failed_login_window_started_at is typed as string | Date | null
+  because ORM/driver combinations differ in what they hand back for a
+  timestamp column - e.g. Postgres (via pg) deserialises `timestamp` columns
+  to JS Date objects, while SQLite drivers commonly hand back strings. If we
+  patch a Date straight back into the model unchanged, it round-trips fine
+  through most ORMs' own read path, but fails any model whose jsonSchema (or
+  equivalent) declares the field as `string | null` - exactly the type this
+  interface itself documents - since patch() validates against that schema
+  before the value gets anywhere near the driver. Normalising here means
+  every consumer's model can declare the field as a plain string without
+  needing to know which driver it's running against.
+*/
+function toIsoString(value: string | Date | null | undefined): string | null {
+	if (!value) return null;
+	return value instanceof Date ? value.toISOString() : value;
+}
+
+/*
   Validates that both an identifier and password were supplied, then
   performs the shared first-factor check used by sessions ('/login'),
   mfa-sms ('/sessions') and mfa-totp ('/login', plus its MFA-disable
@@ -92,7 +110,7 @@ export async function verifyPassword(
 				: (user.failed_login_attempts ?? 0) + 1,
 			failed_login_window_started_at: windowExpired
 				? new Date().toISOString()
-				: user.failed_login_window_started_at,
+				: toIsoString(user.failed_login_window_started_at),
 		});
 	}
 

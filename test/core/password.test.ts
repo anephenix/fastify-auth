@@ -111,6 +111,34 @@ describe("verifyPassword", () => {
 		);
 	});
 
+	it("normalises a Date failed_login_window_started_at (e.g. from Postgres) back to a string on patch", async () => {
+		// pg deserialises `timestamp` columns to JS Date objects, unlike
+		// SQLite drivers which commonly hand back strings. A model whose
+		// jsonSchema declares this field as `string | null` (the type
+		// IUserModel itself documents) would reject a patch that re-writes
+		// the Date unchanged.
+		const patch = vi.fn().mockResolvedValue(1);
+		const windowStartedAt = new Date(Date.now() - 1000);
+		const user = buildUser({
+			failed_login_attempts: 1,
+			failed_login_window_started_at: windowStartedAt,
+			$query: vi.fn().mockReturnValue({ patch }),
+		});
+		const User = {
+			findByIdentifier: vi.fn().mockResolvedValue(user),
+		} as unknown as IUserModelStatic;
+		const auth = buildAuth({
+			verifyPasswordSafe: vi.fn().mockResolvedValue(false),
+		});
+
+		await verifyPassword(auth, User, "alice", "wrong");
+
+		expect(patch).toHaveBeenCalledWith({
+			failed_login_attempts: 2,
+			failed_login_window_started_at: windowStartedAt.toISOString(),
+		});
+	});
+
 	it("resets failed_login_attempts on a successful login", async () => {
 		const patch = vi.fn().mockResolvedValue(1);
 		const user = buildUser({
