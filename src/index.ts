@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
+import { createAuthenticateSession } from "./middleware/authenticate.js";
 import { registerForgottenPasswordStrategy } from "./strategies/forgotten-password.js";
 import { registerMagicLinksStrategy } from "./strategies/magic-links.js";
 import { registerMfaSmsStrategy } from "./strategies/mfa-sms.js";
@@ -88,7 +89,14 @@ export type {
 	IUserModel,
 	IUserModelStatic,
 	MagicLinkCreatedParams,
+	SignupParams,
 	SmsCodeCreatedParams,
 	Strategy,
 	TotpOptions,
 } from "./types.js";
+// createAuthenticateSession is the same preHandler factory the 'sessions'
+// (and mfa-totp) strategy uses internally to protect its own routes -
+// exported so a consuming app can protect its own routes (e.g. account
+// settings) with the exact same session check, rather than reimplementing
+// it against the Session model itself.
+export { createAuthenticateSession };

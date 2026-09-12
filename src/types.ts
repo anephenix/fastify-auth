@@ -214,6 +214,10 @@ export interface ForgotPasswordRequestedParams {
 	isEmail: boolean;
 }
 
+export interface SignupParams {
+	user: IUserModel;
+}
+
 export interface AuthFastifyHooks {
 	/** Called after a magic link record is created. Use this to send the email. */
 	onMagicLinkCreated?: (params: MagicLinkCreatedParams) => Promise<void>;
@@ -226,6 +230,12 @@ export interface AuthFastifyHooks {
 	onForgotPasswordRequested?: (
 		params: ForgotPasswordRequestedParams,
 	) => Promise<void>;
+	/**
+	 * Called after POST /signup creates the user, before the reply is sent.
+	 * Use this for post-signup side effects (e.g. queueing a verification
+	 * email) - the plugin has no concept of email verification itself.
+	 */
+	onSignup?: (params: SignupParams) => Promise<void>;
 }
 
 // ─── TOTP-specific options ────────────────────────────────────────────────────

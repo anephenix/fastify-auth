@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import authPlugin from "../src/index.js";
+import authPlugin, { createAuthenticateSession } from "../src/index.js";
 import type {
 	AuthFastifyPluginOptions,
 	IForgotPasswordModelStatic,
@@ -114,6 +114,14 @@ describe("authPlugin (index.ts)", () => {
 			url: "/forgot-password",
 		});
 		expect(response.statusCode).not.toBe(404);
+	});
+
+	it("re-exports createAuthenticateSession (used by consuming apps to protect their own routes)", () => {
+		expect(typeof createAuthenticateSession).toBe("function");
+		const authenticateSession = createAuthenticateSession({
+			Session: {} as unknown as ISessionModelStatic,
+		});
+		expect(typeof authenticateSession).toBe("function");
 	});
 
 	it("throws for an unknown strategy", async () => {

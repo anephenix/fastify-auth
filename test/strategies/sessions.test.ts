@@ -51,6 +51,7 @@ type QBOverrides = Record<string, unknown>;
 function buildApp(
 	queryOverrides: QBOverrides = {},
 	sessionObj = buildMockSession(),
+	hooks?: AuthFastifyPluginOptions["hooks"],
 ) {
 	const app = Fastify();
 	app.register(cookie);
@@ -103,6 +104,7 @@ function buildApp(
 		strategy: "sessions",
 		auth,
 		models: { User, Session },
+		...(hooks && { hooks }),
 	};
 
 	registerSessionsStrategy(app, opts);
@@ -216,6 +218,42 @@ describe("POST /signup", () => {
 			email: "test@example.com",
 			password: "secret",
 		});
+	});
+
+	it("calls hooks.onSignup with the created user after insert, before replying", async () => {
+		const onSignup = vi.fn().mockResolvedValue(undefined);
+		const { app } = buildApp({}, buildMockSession(), { onSignup });
+		await app.ready();
+		const response = await app.inject({
+			method: "POST",
+			url: "/signup",
+			payload: {
+				username: "testuser",
+				email: "test@example.com",
+				password: "secret",
+			},
+		});
+		expect(response.statusCode).toBe(201);
+		expect(onSignup).toHaveBeenCalledWith({ user: mockUser });
+	});
+
+	it("does not call hooks.onSignup when signup fails", async () => {
+		const onSignup = vi.fn().mockResolvedValue(undefined);
+		const { app, User } = buildApp({}, buildMockSession(), { onSignup });
+		(User.query as ReturnType<typeof vi.fn>).mockReturnValue({
+			insert: vi.fn().mockRejectedValue(new Error("Database error")),
+		});
+		await app.ready();
+		await app.inject({
+			method: "POST",
+			url: "/signup",
+			payload: {
+				username: "testuser",
+				email: "test@example.com",
+				password: "secret",
+			},
+		});
+		expect(onSignup).not.toHaveBeenCalled();
 	});
 });
 

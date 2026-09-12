@@ -32,7 +32,7 @@ export function registerSessionsStrategy(
 	app: FastifyInstance,
 	opts: AuthFastifyPluginOptions,
 ): void {
-	const { auth, models } = opts;
+	const { auth, models, hooks } = opts;
 	const { User, Session } = models;
 
 	if (!Session) {
@@ -62,6 +62,7 @@ export function registerSessionsStrategy(
 				password,
 				...(mobile_number && { mobile_number }),
 			});
+			if (hooks?.onSignup) await hooks.onSignup({ user });
 			reply
 				.status(201)
 				.send({ id: user.id, username: user.username, email: user.email });
