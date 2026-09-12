@@ -113,6 +113,14 @@ async function runWizard(outputDir: string, force: boolean): Promise<void> {
 		);
 	}
 
+	if (password) {
+		console.log(
+			"\nYour users table needs hashed_password, failed_login_attempts\n" +
+				"(integer, default 0) and failed_login_window_started_at (nullable\n" +
+				"timestamp) columns - see the TODO comment in models/User.ts.",
+		);
+	}
+
 	if (mfa === "totp") {
 		console.log(
 			"\nTOTP MFA needs two extra dependencies: npm i otplib qrcode\n" +

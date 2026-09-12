@@ -448,6 +448,7 @@ both) - which is exactly what the [CLI wizard](#cli-wizard) generates.
 ```typescript
 import {
   verifyPassword,
+  RateLimitedError,
   createSession,
   respondWithNewSession,
   respondWithRefreshedSession,
@@ -467,7 +468,8 @@ import {
 
 | Export | What it does |
 |--------|---------------|
-| `verifyPassword(User, identifier, password)` | Validates identifier/password are present, then delegates to `User.authenticate()` - the shared first-factor check used by `sessions`, `mfa-sms` and `mfa-totp`. |
+| `verifyPassword(auth, User, identifier, password)` | Validates identifier/password are present, looks the user up via `User.findByIdentifier()`, then performs a timing-safe password check (`auth.verifyPasswordSafe`) and login rate limiting (`auth.checkRateLimit`) itself - the shared first-factor check used by `sessions`, `mfa-sms` and `mfa-totp` (including its MFA-disable routes). Throws `RateLimitedError` (with a `retryAfter` in seconds) when the account is currently locked out; strategies catch this and respond `429` with a `Retry-After` header. |
+| `RateLimitedError` | Error class thrown by `verifyPassword()` when rate limited. Has a `retryAfter: number` property (seconds). |
 | `createSession(Session, userId)` | Creates a `Session` record and returns just the token fields (`access_token`, `refresh_token`, `access_token_expires_at`, `refresh_token_expires_at`). |
 | `respondWithNewSession({ request, reply, auth, secureCookie, tokens })` | Sends a freshly-created session - `HttpOnly` cookies for web clients, JSON body for API clients (see [Web vs API clients](#web-vs-api-clients)). |
 | `respondWithRefreshedSession({ request, reply, auth, secureCookie, tokens })` | Same as above, but for a refreshed access token (only resets the `access_token` cookie, not `refresh_token`). |
@@ -491,6 +493,9 @@ interface IUserModel {
   email?: string;
   mobile_number?: string;     // required for mfa-sms
   mfa_totp_secret?: string | null;  // required for mfa-totp
+  hashed_password?: string;   // required for sessions/mfa-sms/mfa-totp - read directly by verifyPassword()
+  failed_login_attempts?: number;               // required for the same strategies - login rate limit bookkeeping
+  failed_login_window_started_at?: string | Date | null;
   updatePassword?(password: string): Promise<void>; // required for forgotten-password
   $query(): QueryBuilder;
   $relatedQuery(relation: string): QueryBuilder;
@@ -498,9 +503,14 @@ interface IUserModel {
 
 interface IUserModelStatic {
   query(): QueryBuilder;
-  authenticate(params: { identifier: string; password: string }): Promise<IUserModel & { isUsingMFA?: boolean }>;
+  // Looks up a user by username or email. verifyPassword() uses this to
+  // perform the timing-safe password check and rate limiting itself, so
+  // that logic doesn't need to be reimplemented per model.
+  findByIdentifier(identifier: string): Promise<IUserModel | undefined | null>;
 }
 ```
+
+`hashed_password`, `failed_login_attempts` and `failed_login_window_started_at` need backing columns on your `users` table - `failed_login_attempts` should default to `0`, `failed_login_window_started_at` is nullable. Tune the lockout threshold/window via `new Auth({ loginOptions: { maxAttempts, windowSeconds } })`.
 
 ### Session
 
@@ -672,6 +682,12 @@ magic link can't be used to bypass MFA the way it could with the
 per user (via `/auth/mfa/sms/setup`) - unlike the standalone `mfa-sms`
 strategy, which requires it for every password login with no per-user
 toggle.
+
+If password login is selected, your `users` table needs `hashed_password`,
+`failed_login_attempts` (integer, default `0`) and
+`failed_login_window_started_at` (nullable timestamp) columns - the latter
+two back the login rate limiting configured in `lib/auth.ts`. See the TODO
+comment at the top of the generated `models/User.ts`.
 
 If TOTP is selected, install its two dependencies and set an encryption key:
 

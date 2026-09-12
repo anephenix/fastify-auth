@@ -15,7 +15,7 @@ export {
 	validateResetToken,
 } from "./forgot-password.js";
 export { issueMfaChallenge } from "./mfa-gate.js";
-export { verifyPassword } from "./password.js";
+export { RateLimitedError, verifyPassword } from "./password.js";
 export {
 	createSession,
 	respondWithNewSession,

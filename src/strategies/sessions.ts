@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { verifyPassword } from "../core/password.js";
+import { RateLimitedError, verifyPassword } from "../core/password.js";
 import { createSession, respondWithNewSession } from "../core/session.js";
 import {
 	createDeleteAllSessionsHandler,
@@ -79,7 +79,7 @@ export function registerSessionsStrategy(
 		};
 
 		try {
-			const user = await verifyPassword(User, identifier, password);
+			const user = await verifyPassword(auth, User, identifier, password);
 			if (!user) {
 				return reply.status(401).send({ error: "Invalid credentials" });
 			}
@@ -93,6 +93,13 @@ export function registerSessionsStrategy(
 				tokens,
 			});
 		} catch (error) {
+			if (error instanceof RateLimitedError) {
+				reply
+					.header("Retry-After", String(error.retryAfter))
+					.status(429)
+					.send({ error: error.message });
+				return;
+			}
 			reply.status(401).send({ error: handleError(error as Error) });
 		}
 	});

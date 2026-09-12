@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { authenticator } from "otplib";
 import qrcode from "qrcode";
 import { issueMfaChallenge } from "../core/mfa-gate.js";
-import { verifyPassword } from "../core/password.js";
+import { RateLimitedError, verifyPassword } from "../core/password.js";
 import { createSession } from "../core/session.js";
 import {
 	buildTotpCrypto,
@@ -96,12 +96,12 @@ export function registerMfaTotpStrategy(
 				password: string;
 			};
 
-			const user = await verifyPassword(User, identifier, password);
+			const user = await verifyPassword(auth, User, identifier, password);
 			if (!user) {
 				return reply.status(401).send({ error: "Invalid credentials" });
 			}
 
-			// User.authenticate returns { id, username, isUsingMFA } for this strategy
+			// verifyPassword returns { id, username, isUsingMFA, ... } for this strategy
 			if (user.isUsingMFA) {
 				const challenge = await issueMfaChallenge(MfaToken, auth, user.id);
 				return reply.status(201).send(challenge);
@@ -110,6 +110,13 @@ export function registerMfaTotpStrategy(
 			const tokens = await createSession(Session, user.id);
 			return reply.status(201).send(tokens);
 		} catch (error) {
+			if (error instanceof RateLimitedError) {
+				reply
+					.header("Retry-After", String(error.retryAfter))
+					.status(429)
+					.send({ error: error.message });
+				return;
+			}
 			reply.status(401).send({ error: handleError(error as Error) });
 		}
 	});
@@ -273,11 +280,13 @@ export function registerMfaTotpStrategy(
 			if (!user) return reply.status(401).send({ error: "Unauthorized" });
 
 			try {
-				const isPasswordValid = await User.authenticate({
-					identifier: user.username,
+				const isPasswordValid = await verifyPassword(
+					auth,
+					User,
+					user.username,
 					password,
-				});
-				if (!isPasswordValid) throw new Error("Invalid password");
+				);
+				if (!isPasswordValid) throw new Error("Invalid credentials");
 
 				if (!verifyTotpCode(totpCrypto, user.mfa_totp_secret, code)) {
 					throw new Error("Invalid MFA TOTP code");
@@ -290,6 +299,13 @@ export function registerMfaTotpStrategy(
 					.status(200)
 					.send({ message: "MFA TOTP disabled successfully" });
 			} catch (error) {
+				if (error instanceof RateLimitedError) {
+					reply
+						.header("Retry-After", String(error.retryAfter))
+						.status(429)
+						.send({ error: error.message });
+					return;
+				}
 				reply.status(400).send({ error: handleError(error as Error) });
 			}
 		},
@@ -309,11 +325,13 @@ export function registerMfaTotpStrategy(
 			if (!user) return reply.status(401).send({ error: "Unauthorized" });
 
 			try {
-				const isPasswordValid = await User.authenticate({
-					identifier: user.username,
+				const isPasswordValid = await verifyPassword(
+					auth,
+					User,
+					user.username,
 					password,
-				});
-				if (!isPasswordValid) throw new Error("Invalid password");
+				);
+				if (!isPasswordValid) throw new Error("Invalid credentials");
 
 				const isRecoveryCodeValid = await verifyRecoveryCode(
 					RecoveryCode,
@@ -329,6 +347,13 @@ export function registerMfaTotpStrategy(
 					.status(200)
 					.send({ message: "MFA TOTP disabled successfully" });
 			} catch (error) {
+				if (error instanceof RateLimitedError) {
+					reply
+						.header("Retry-After", String(error.retryAfter))
+						.status(429)
+						.send({ error: error.message });
+					return;
+				}
 				reply.status(400).send({ error: handleError(error as Error) });
 			}
 		},

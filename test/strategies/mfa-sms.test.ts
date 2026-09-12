@@ -40,6 +40,7 @@ const mockAuth = {
 		hashedCode: "hashed_code",
 		expiresAt: new Date(Date.now() + 600_000),
 	}),
+	loginWindowSeconds: 900,
 };
 
 // ─── App builder ─────────────────────────────────────────────────────────────
@@ -47,6 +48,8 @@ const mockAuth = {
 function buildApp(
 	opts: {
 		userAuthResult?: unknown;
+		passwordValid?: boolean;
+		rateLimited?: { retryAfter: number };
 		smsFindResult?: unknown;
 		onSmsCodeCreated?: () => Promise<void>;
 	} = {},
@@ -54,12 +57,34 @@ function buildApp(
 	const app = Fastify();
 
 	const User = {
-		authenticate: vi
-			.fn()
-			.mockResolvedValue(
-				opts.userAuthResult !== undefined ? opts.userAuthResult : mockUser,
-			),
+		findByIdentifier: vi.fn().mockResolvedValue(
+			opts.userAuthResult !== undefined
+				? opts.userAuthResult
+				: {
+						...mockUser,
+						hashed_password: "hashed_secret",
+						failed_login_attempts: 0,
+						failed_login_window_started_at: opts.rateLimited
+							? new Date().toISOString()
+							: null,
+						$query: vi
+							.fn()
+							.mockReturnValue({ patch: vi.fn().mockResolvedValue(1) }),
+					},
+		),
 	} as unknown as IUserModelStatic;
+
+	const auth = {
+		...mockAuth,
+		verifyPasswordSafe: vi.fn().mockResolvedValue(opts.passwordValid ?? true),
+		checkRateLimit: vi
+			.fn()
+			.mockReturnValue(
+				opts.rateLimited
+					? { blocked: true, remainingAttempts: 0, ...opts.rateLimited }
+					: { blocked: false, remainingAttempts: 5 },
+			),
+	} as unknown as AuthFastifyPluginOptions["auth"];
 
 	const SmsCode = {
 		query: vi.fn().mockReturnValue({
@@ -81,7 +106,7 @@ function buildApp(
 
 	const pluginOpts: AuthFastifyPluginOptions = {
 		strategy: "mfa-sms",
-		auth: mockAuth as unknown as AuthFastifyPluginOptions["auth"],
+		auth,
 		models: { User, Session, SmsCode },
 		hooks: opts.onSmsCodeCreated
 			? { onSmsCodeCreated: opts.onSmsCodeCreated }
@@ -89,7 +114,7 @@ function buildApp(
 	};
 
 	registerMfaSmsStrategy(app, pluginOpts);
-	return { app, User, SmsCode, Session };
+	return { app, User, SmsCode, Session, auth };
 }
 
 // ─── POST /sessions (first-factor auth) ──────────────────────────────────────
@@ -120,7 +145,7 @@ describe("POST /sessions", () => {
 	});
 
 	it("returns 401 when credentials are invalid", async () => {
-		const { app } = buildApp({ userAuthResult: null });
+		const { app } = buildApp({ passwordValid: false });
 		await app.ready();
 		const response = await app.inject({
 			method: "POST",
@@ -129,6 +154,19 @@ describe("POST /sessions", () => {
 		});
 		expect(response.statusCode).toBe(401);
 		expect(response.json()).toMatchObject({ error: "Invalid credentials" });
+	});
+
+	it("returns 429 with a Retry-After header when the account is rate limited", async () => {
+		const { app, auth } = buildApp({ rateLimited: { retryAfter: 17 } });
+		await app.ready();
+		const response = await app.inject({
+			method: "POST",
+			url: "/sessions",
+			payload: { identifier: "testuser", password: "secret" },
+		});
+		expect(response.statusCode).toBe(429);
+		expect(response.headers["retry-after"]).toBe("17");
+		expect(auth.verifyPasswordSafe).not.toHaveBeenCalled();
 	});
 
 	it("returns 201 with token on successful authentication", async () => {
@@ -156,7 +194,10 @@ describe("POST /sessions", () => {
 		});
 		expect(hook).toHaveBeenCalledOnce();
 		expect(hook).toHaveBeenCalledWith(
-			expect.objectContaining({ user: mockUser, token: "sms_token_abc" }),
+			expect.objectContaining({
+				user: expect.objectContaining(mockUser),
+				token: "sms_token_abc",
+			}),
 		);
 	});
 });

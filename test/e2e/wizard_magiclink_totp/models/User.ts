@@ -37,7 +37,9 @@ const User = {
 					id: db.nextId.user++,
 					username: data.username,
 					email: data.email,
-					password: await auth.hashPassword(data.password),
+					hashed_password: await auth.hashPassword(data.password),
+					failed_login_attempts: 0,
+					failed_login_window_started_at: null,
 					mfa_totp_secret: null,
 				};
 				db.users.push(record);
@@ -61,24 +63,11 @@ const User = {
 			},
 		};
 	},
-	async authenticate({
-		identifier,
-		password,
-	}: {
-		identifier: string;
-		password: string;
-	}) {
+	async findByIdentifier(identifier: string) {
 		const record = db.users.find(
 			(u) => u.username === identifier || u.email === identifier,
 		);
-		if (!record) return null;
-
-		const isValid = await auth.verifyPassword(password, record.password);
-		if (!isValid) return null;
-
-		return Object.assign(wrapUser(record), {
-			isUsingMFA: !!record.mfa_totp_secret,
-		});
+		return record ? wrapUser(record) : undefined;
 	},
 };
 

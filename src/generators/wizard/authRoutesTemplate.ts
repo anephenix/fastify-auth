@@ -28,7 +28,10 @@ export function authRoutesTemplate(selections: WizardSelections): string {
 		"createDeleteAllSessionsHandler",
 		"createDeleteSessionHandler",
 	]);
-	if (password) coreImports.add("verifyPassword");
+	if (password) {
+		coreImports.add("verifyPassword");
+		coreImports.add("RateLimitedError");
+	}
 	if (mfa === "totp") {
 		coreImports.add("issueMfaChallenge");
 		coreImports.add("verifyTotpCode");
@@ -130,10 +133,9 @@ ${totpDepsComment}`;
 	// `indent` matches the surrounding block's nesting depth. `totpCheckExpr`
 	// is the boolean expression that decides MFA-enrolled status in TOTP mode
 	// - it can't be hardcoded to `${userExpr}.isUsingMFA` because that flag is
-	// only computed inside User.authenticate()'s return value (the /login
-	// path, via verifyPassword); a plain User.query().findById() lookup (the
-	// /magic-links/verify path) has no such field, only the real
-	// mfa_totp_secret column.
+	// only computed inside verifyPassword()'s return value (the /login path);
+	// a plain User.query().findById() lookup (the /magic-links/verify path)
+	// has no such field, only the real mfa_totp_secret column.
 	function mfaLoginGate(
 		userExpr: string,
 		replyFn: "status" | "code",
@@ -203,7 +205,7 @@ ${totpDepsComment}`;
 		};
 
 		try {
-			const user = await verifyPassword(User, identifier, password);
+			const user = await verifyPassword(auth, User, identifier, password);
 			if (!user) {
 				return reply.status(401).send({ error: "Invalid credentials" });
 			}
@@ -217,6 +219,13 @@ ${mfaLoginGate("user", "status", "\t\t\t", "user.isUsingMFA")}
 				tokens,
 			});
 		} catch (error) {
+			if (error instanceof RateLimitedError) {
+				reply
+					.header("Retry-After", String(error.retryAfter))
+					.status(429)
+					.send({ error: error.message });
+				return;
+			}
 			reply.status(401).send({ error: (error as Error).message });
 		}
 	});`
@@ -462,11 +471,13 @@ ${
 			if (!user) return reply.status(401).send({ error: "Unauthorized" });
 
 			try {
-				const isPasswordValid = await User.authenticate({
-					identifier: user.username,
+				const isPasswordValid = await verifyPassword(
+					auth,
+					User,
+					user.username,
 					password,
-				});
-				if (!isPasswordValid) throw new Error("Invalid password");
+				);
+				if (!isPasswordValid) throw new Error("Invalid credentials");
 
 				if (!verifyTotpCode(totpCrypto, user.mfa_totp_secret, code)) {
 					throw new Error("Invalid MFA TOTP code");
@@ -479,6 +490,13 @@ ${
 					.status(200)
 					.send({ message: "MFA TOTP disabled successfully" });
 			} catch (error) {
+				if (error instanceof RateLimitedError) {
+					reply
+						.header("Retry-After", String(error.retryAfter))
+						.status(429)
+						.send({ error: error.message });
+					return;
+				}
 				reply.status(400).send({ error: (error as Error).message });
 			}
 		},
@@ -498,11 +516,13 @@ ${
 			if (!user) return reply.status(401).send({ error: "Unauthorized" });
 
 			try {
-				const isPasswordValid = await User.authenticate({
-					identifier: user.username,
+				const isPasswordValid = await verifyPassword(
+					auth,
+					User,
+					user.username,
 					password,
-				});
-				if (!isPasswordValid) throw new Error("Invalid password");
+				);
+				if (!isPasswordValid) throw new Error("Invalid credentials");
 
 				const isRecoveryCodeValid = await verifyRecoveryCode(
 					RecoveryCode,
@@ -518,6 +538,13 @@ ${
 					.status(200)
 					.send({ message: "MFA TOTP disabled successfully" });
 			} catch (error) {
+				if (error instanceof RateLimitedError) {
+					reply
+						.header("Retry-After", String(error.retryAfter))
+						.status(429)
+						.send({ error: error.message });
+					return;
+				}
 				reply.status(400).send({ error: (error as Error).message });
 			}
 		},
@@ -615,11 +642,13 @@ ${
 			if (!user) return reply.status(401).send({ error: "Unauthorized" });
 
 			try {
-				const isPasswordValid = await User.authenticate({
-					identifier: user.username,
+				const isPasswordValid = await verifyPassword(
+					auth,
+					User,
+					user.username,
 					password,
-				});
-				if (!isPasswordValid) throw new Error("Invalid password");
+				);
+				if (!isPasswordValid) throw new Error("Invalid credentials");
 
 				await user.$query().patch({ sms_mfa_enabled: false });
 
@@ -627,6 +656,13 @@ ${
 					.status(200)
 					.send({ message: "SMS MFA disabled successfully" });
 			} catch (error) {
+				if (error instanceof RateLimitedError) {
+					reply
+						.header("Retry-After", String(error.retryAfter))
+						.status(429)
+						.send({ error: error.message });
+					return;
+				}
 				reply.status(400).send({ error: (error as Error).message });
 			}
 		},

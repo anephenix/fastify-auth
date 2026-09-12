@@ -84,6 +84,7 @@ const mockAuth = {
 		expiresAt: new Date(Date.now() + 600_000),
 	}),
 	maxMfaAttempts: 3,
+	loginWindowSeconds: 900,
 };
 
 const totpOpts = {
@@ -100,6 +101,8 @@ function buildApp(
 		sessionFindOneResult?: unknown;
 		recoveryCodes?: string[];
 		existingRecoveryCodes?: unknown[];
+		passwordValid?: boolean;
+		rateLimited?: { retryAfter: number };
 	} = {},
 ) {
 	const app = Fastify();
@@ -113,12 +116,31 @@ function buildApp(
 					opts.userResult !== undefined ? opts.userResult : mockUser,
 				),
 		}),
-		authenticate: vi
-			.fn()
-			.mockResolvedValue(
-				opts.userResult !== undefined ? opts.userResult : mockUser,
-			),
+		findByIdentifier: vi.fn().mockResolvedValue(
+			opts.userResult !== undefined
+				? opts.userResult
+				: {
+						...mockUser,
+						hashed_password: "hashed_secret",
+						failed_login_attempts: 0,
+						failed_login_window_started_at: opts.rateLimited
+							? new Date().toISOString()
+							: null,
+					},
+		),
 	} as unknown as IUserModelStatic;
+
+	const auth = {
+		...mockAuth,
+		verifyPasswordSafe: vi.fn().mockResolvedValue(opts.passwordValid ?? true),
+		checkRateLimit: vi
+			.fn()
+			.mockReturnValue(
+				opts.rateLimited
+					? { blocked: true, remainingAttempts: 0, ...opts.rateLimited }
+					: { blocked: false, remainingAttempts: 5 },
+			),
+	} as unknown as AuthFastifyPluginOptions["auth"];
 
 	const MfaToken = {
 		query: vi.fn().mockReturnValue({
@@ -157,7 +179,7 @@ function buildApp(
 
 	const pluginOpts: AuthFastifyPluginOptions = {
 		strategy: "mfa-totp",
-		auth: mockAuth as unknown as AuthFastifyPluginOptions["auth"],
+		auth,
 		models: { User, Session, MfaToken, RecoveryCode },
 		totp: totpOpts,
 	};
@@ -183,7 +205,7 @@ function buildApp(
 	});
 
 	registerMfaTotpStrategy(app, pluginOpts);
-	return { app, User, MfaToken, RecoveryCode, Session };
+	return { app, User, MfaToken, RecoveryCode, Session, auth };
 }
 
 // ─── POST /signup ─────────────────────────────────────────────────────────────
@@ -245,8 +267,10 @@ describe("POST /login", () => {
 	});
 
 	it("returns 401 when credentials are invalid", async () => {
-		const { app, User } = buildApp();
-		(User.authenticate as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+		const { app, auth } = buildApp();
+		(auth.verifyPasswordSafe as ReturnType<typeof vi.fn>).mockResolvedValue(
+			false,
+		);
 		await app.ready();
 		const response = await app.inject({
 			method: "POST",
@@ -255,6 +279,19 @@ describe("POST /login", () => {
 		});
 		expect(response.statusCode).toBe(401);
 		expect(response.json()).toMatchObject({ error: "Invalid credentials" });
+	});
+
+	it("returns 429 with a Retry-After header when the account is rate limited", async () => {
+		const { app, auth } = buildApp({ rateLimited: { retryAfter: 30 } });
+		await app.ready();
+		const response = await app.inject({
+			method: "POST",
+			url: "/login",
+			payload: { identifier: "testuser", password: "secret" },
+		});
+		expect(response.statusCode).toBe(429);
+		expect(response.headers["retry-after"]).toBe("30");
+		expect(auth.verifyPasswordSafe).not.toHaveBeenCalled();
 	});
 
 	it("returns session tokens when MFA is not enabled", async () => {
@@ -267,15 +304,20 @@ describe("POST /login", () => {
 		});
 		expect(response.statusCode).toBe(201);
 		const body = response.json();
-		// User has isUsingMFA: false, so returns tokens directly
+		// User has mfa_totp_secret: null, so isUsingMFA is false and tokens
+		// are returned directly.
 		expect(body).toHaveProperty("access_token");
 	});
 
 	it("returns an MFA token when MFA is enabled", async () => {
-		const { app, User } = buildApp();
-		(User.authenticate as ReturnType<typeof vi.fn>).mockResolvedValue({
-			...mockUser,
-			isUsingMFA: true,
+		const { app } = buildApp({
+			userResult: {
+				...mockUser,
+				hashed_password: "hashed_secret",
+				failed_login_attempts: 0,
+				failed_login_window_started_at: null,
+				mfa_totp_secret: "encrypted-secret",
+			},
 		});
 		await app.ready();
 		const response = await app.inject({

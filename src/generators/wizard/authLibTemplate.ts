@@ -32,6 +32,9 @@ ${totpImport}
 // see https://github.com/anephenix/auth for all Auth options.
 export const auth = new Auth({
 	passwordValidationRules: { minLength: 8 },
+	// Locks an account out after 5 failed login attempts within 15 minutes -
+	// see models/User.ts's findByIdentifier()/failed_login_attempts fields.
+	loginOptions: { maxAttempts: 5, windowSeconds: 15 * 60 },
 });
 ${totpExport}`;
 }

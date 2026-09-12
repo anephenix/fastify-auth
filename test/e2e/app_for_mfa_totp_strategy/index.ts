@@ -66,6 +66,9 @@ export interface FakeUser {
 	username: string;
 	email: string;
 	password: string;
+	hashed_password: string;
+	failed_login_attempts: number;
+	failed_login_window_started_at: string | null;
 	mobile_number?: string;
 	mfa_totp_secret: string | null;
 	$query: () => { patch: (data: Partial<FakeUser>) => Promise<number> };
@@ -110,7 +113,7 @@ export interface BuiltApp {
 		password: string;
 		mobile_number?: string;
 		mfa_totp_secret?: string | null;
-	}) => FakeUser;
+	}) => Promise<FakeUser>;
 	createSession: (userId: number) => FakeSession;
 }
 
@@ -136,18 +139,21 @@ export function buildApp(): BuiltApp {
 		};
 	}
 
-	function addUser(data: {
+	async function addUser(data: {
 		username: string;
 		email: string;
 		password: string;
 		mobile_number?: string;
 		mfa_totp_secret?: string | null;
-	}): FakeUser {
+	}): Promise<FakeUser> {
 		const user = {
 			id: nextUserId++,
 			username: data.username,
 			email: data.email,
 			password: data.password,
+			hashed_password: await auth.hashPassword(data.password),
+			failed_login_attempts: 0,
+			failed_login_window_started_at: null,
 			mobile_number: data.mobile_number,
 			mfa_totp_secret: data.mfa_totp_secret ?? null,
 		} as FakeUser;
@@ -222,19 +228,11 @@ export function buildApp(): BuiltApp {
 			},
 			findById: async (id: number) => users.find((user) => user.id === id),
 		}),
-		async authenticate({
-			identifier,
-			password,
-		}: {
-			identifier: string;
-			password: string;
-		}) {
-			const user = users.find(
+		async findByIdentifier(identifier: string) {
+			return users.find(
 				(candidate) =>
 					candidate.username === identifier || candidate.email === identifier,
 			);
-			if (!user || user.password !== password) return null;
-			return { ...user, isUsingMFA: !!user.mfa_totp_secret };
 		},
 	} as unknown as IUserModelStatic;
 

@@ -20,6 +20,10 @@ export interface FakeUser {
 	username: string;
 	email: string;
 	password: string;
+	hashed_password: string;
+	failed_login_attempts: number;
+	failed_login_window_started_at: string | null;
+	$query(): { patch: (data: Partial<FakeUser>) => Promise<void> };
 }
 
 export interface FakeSmsCode {
@@ -60,7 +64,7 @@ export interface BuiltApp {
 		username: string;
 		email: string;
 		password: string;
-	}) => FakeUser;
+	}) => Promise<FakeUser>;
 }
 
 export function buildApp(): BuiltApp {
@@ -74,30 +78,35 @@ export function buildApp(): BuiltApp {
 	let nextSmsCodeId = 1;
 	let nextSessionId = 1;
 
-	function addUser(data: {
+	async function addUser(data: {
 		username: string;
 		email: string;
 		password: string;
-	}): FakeUser {
-		const user: FakeUser = { id: nextUserId++, ...data };
+	}): Promise<FakeUser> {
+		const user: FakeUser = {
+			id: nextUserId++,
+			...data,
+			hashed_password: await auth.hashPassword(data.password),
+			failed_login_attempts: 0,
+			failed_login_window_started_at: null,
+			$query() {
+				return {
+					patch: async (patchData: Partial<FakeUser>) => {
+						Object.assign(user, patchData);
+					},
+				};
+			},
+		};
 		users.push(user);
 		return user;
 	}
 
 	const User = {
-		async authenticate({
-			identifier,
-			password,
-		}: {
-			identifier: string;
-			password: string;
-		}) {
-			const user = users.find(
+		async findByIdentifier(identifier: string) {
+			return users.find(
 				(candidate) =>
 					candidate.username === identifier || candidate.email === identifier,
 			);
-			if (!user || user.password !== password) return null;
-			return user;
 		},
 	} as unknown as IUserModelStatic;
 

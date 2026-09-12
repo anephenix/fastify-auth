@@ -54,20 +54,25 @@ describe("authLibTemplate", () => {
 });
 
 describe("userModelTemplate", () => {
-	it("omits MFA fields/relations and returns the plain user when mfa is none", () => {
+	it("omits MFA fields/relations when mfa is none, and always exposes findByIdentifier", () => {
 		const output = userModelTemplate(selections());
 		expect(output).not.toContain("mfa_totp_secret");
 		expect(output).not.toContain("recoveryCodes");
 		expect(output).not.toContain("sms_mfa_enabled");
-		expect(output).toContain("return user;");
+		expect(output).not.toContain("authenticate(");
+		expect(output).toContain(
+			"static async findByIdentifier(identifier: string)",
+		);
+		expect(output).toContain("hashed_password!: string;");
+		expect(output).toContain("failed_login_attempts!: number;");
+		expect(output).toContain("failed_login_window_started_at?: string | null;");
 	});
 
-	it("adds mfa_totp_secret, the recoveryCodes relation, and isUsingMFA when mfa is totp", () => {
+	it("adds mfa_totp_secret and the recoveryCodes relation when mfa is totp", () => {
 		const output = userModelTemplate(selections({ mfa: "totp" }));
 		expect(output).toContain("mfa_totp_secret!: string | null;");
 		expect(output).toContain('import RecoveryCode from "./RecoveryCode.js";');
 		expect(output).toContain("recoveryCodes:");
-		expect(output).toContain("isUsingMFA: !!user.mfa_totp_secret");
 	});
 
 	it("adds sms_mfa_enabled and mobile_number, with no TOTP fields, when mfa is sms", () => {
@@ -76,13 +81,14 @@ describe("userModelTemplate", () => {
 		expect(output).toContain("mobile_number?: string;");
 		expect(output).not.toContain("mfa_totp_secret");
 		expect(output).not.toContain("recoveryCodes");
-		expect(output).toContain("return user;");
 	});
 
 	it("only adds updatePassword when forgotPassword is selected", () => {
 		expect(userModelTemplate(selections())).not.toContain("updatePassword");
-		expect(userModelTemplate(selections({ forgotPassword: true }))).toContain(
-			"async updatePassword(password: string)",
+		const output = userModelTemplate(selections({ forgotPassword: true }));
+		expect(output).toContain("async updatePassword(password: string)");
+		expect(output).toContain(
+			"hashed_password: await auth.hashPassword(password)",
 		);
 	});
 });

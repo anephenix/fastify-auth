@@ -2,7 +2,9 @@ export type FakeUser = {
 	id: number;
 	username: string;
 	email: string;
-	password: string;
+	hashed_password: string;
+	failed_login_attempts: number;
+	failed_login_window_started_at: string | null;
 	mfa_totp_secret: string | null;
 };
 

@@ -12,7 +12,7 @@ export function wrapUser(record: FakeUser) {
 			};
 		},
 		async updatePassword(password: string) {
-			record.password = await auth.hashPassword(password);
+			record.hashed_password = await auth.hashPassword(password);
 		},
 	};
 }
@@ -29,7 +29,9 @@ const User = {
 					id: db.nextId.user++,
 					username: data.username,
 					email: data.email,
-					password: await auth.hashPassword(data.password),
+					hashed_password: await auth.hashPassword(data.password),
+					failed_login_attempts: 0,
+					failed_login_window_started_at: null,
 					sms_mfa_enabled: false,
 					mobile_number: null,
 				};
@@ -54,22 +56,11 @@ const User = {
 			},
 		};
 	},
-	async authenticate({
-		identifier,
-		password,
-	}: {
-		identifier: string;
-		password: string;
-	}) {
+	async findByIdentifier(identifier: string) {
 		const record = db.users.find(
 			(u) => u.username === identifier || u.email === identifier,
 		);
-		if (!record) return null;
-
-		const isValid = await auth.verifyPassword(password, record.password);
-		if (!isValid) return null;
-
-		return wrapUser(record);
+		return record ? wrapUser(record) : undefined;
 	},
 };
 

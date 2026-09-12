@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { verifyPassword } from "../core/password.js";
+import { RateLimitedError, verifyPassword } from "../core/password.js";
 import { createSession } from "../core/session.js";
 import { handleError } from "../helpers/handle-error.js";
 import type { AuthFastifyPluginOptions } from "../types.js";
@@ -42,7 +42,7 @@ export function registerMfaSmsStrategy(
 					password: string;
 				};
 
-				const user = await verifyPassword(User, identifier, password);
+				const user = await verifyPassword(auth, User, identifier, password);
 				if (!user) {
 					return reply.status(401).send({ error: "Invalid credentials" });
 				}
@@ -67,6 +67,13 @@ export function registerMfaSmsStrategy(
 						"Authentication successful. SMS code sent to verify authentication",
 				});
 			} catch (error) {
+				if (error instanceof RateLimitedError) {
+					reply
+						.header("Retry-After", String(error.retryAfter))
+						.status(429)
+						.send({ error: error.message });
+					return;
+				}
 				reply.status(401).send({ error: handleError(error as Error) });
 			}
 		},

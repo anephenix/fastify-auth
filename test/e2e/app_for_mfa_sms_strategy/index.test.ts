@@ -9,7 +9,7 @@ const ALICE = {
 	password: "secret123",
 };
 
-function seedAlice(ctx: BuiltApp) {
+async function seedAlice(ctx: BuiltApp) {
 	return ctx.addUser(ALICE);
 }
 
@@ -40,7 +40,7 @@ async function verifyCode(
 
 /** Seeds a user and drives a real first-factor login to get a live token/code pair. */
 async function triggerSmsLoginForAlice(ctx: BuiltApp) {
-	seedAlice(ctx);
+	await seedAlice(ctx);
 	await requestSmsLogin(ctx);
 	const sent = ctx.sentSmsCodes.at(-1);
 	if (!sent) {
@@ -76,7 +76,7 @@ describe("app_for_mfa_sms_strategy", () => {
 
 			describe("because the identifier is invalid", () => {
 				it("should return a 401 error", async () => {
-					seedAlice(ctx);
+					await seedAlice(ctx);
 					const response = await requestSmsLogin(ctx, {
 						identifier: "nobody",
 					});
@@ -101,7 +101,7 @@ describe("app_for_mfa_sms_strategy", () => {
 
 			describe("because the password is incorrect", () => {
 				it("should return a 401 error", async () => {
-					seedAlice(ctx);
+					await seedAlice(ctx);
 					const response = await requestSmsLogin(ctx, { password: "wrong" });
 					expect(response.statusCode).toBe(401);
 					expect(response.json()).toMatchObject({
@@ -114,7 +114,7 @@ describe("app_for_mfa_sms_strategy", () => {
 		describe("when a user authenticates successfully", () => {
 			// NOTE: the current implementation returns 201 (not 200) here.
 			it("should return a 201 response", async () => {
-				seedAlice(ctx);
+				await seedAlice(ctx);
 				const response = await requestSmsLogin(ctx);
 				expect(response.statusCode).toBe(201);
 				const body = response.json();
@@ -123,14 +123,14 @@ describe("app_for_mfa_sms_strategy", () => {
 			});
 
 			it("should generate an sms code record", async () => {
-				seedAlice(ctx);
+				await seedAlice(ctx);
 				await requestSmsLogin(ctx);
 				expect(ctx.smsCodes).toHaveLength(1);
 				expect(ctx.smsCodes[0]).toMatchObject({ user_id: ctx.users[0].id });
 			});
 
 			it("should send the sms code to the user via a hook", async () => {
-				const user = seedAlice(ctx);
+				const user = await seedAlice(ctx);
 				await requestSmsLogin(ctx);
 				expect(ctx.sentSmsCodes).toHaveLength(1);
 				expect(ctx.sentSmsCodes[0]).toMatchObject({ userId: user.id });

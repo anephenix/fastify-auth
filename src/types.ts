@@ -31,6 +31,20 @@ export interface IUserModel {
 	email?: string;
 	mobile_number?: string;
 	mfa_totp_secret?: string | null;
+	/**
+	 * The stored password hash. Required for the 'sessions', 'mfa-sms' and
+	 * 'mfa-totp' strategies - core/password.ts reads it directly to perform
+	 * a timing-safe verification via auth.verifyPasswordSafe(), so response
+	 * time doesn't reveal whether an identifier exists in the system.
+	 */
+	hashed_password?: string;
+	/**
+	 * Login rate-limit bookkeeping, read/written by core/password.ts via
+	 * auth.checkRateLimit(). Required for the same strategies as
+	 * hashed_password. Reset to 0 / null on a successful login.
+	 */
+	failed_login_attempts?: number;
+	failed_login_window_started_at?: string | Date | null;
 	/** Required for the 'forgotten-password' strategy. */
 	updatePassword?(password: string): Promise<void>;
 	$query(): QueryBuilder;
@@ -40,10 +54,14 @@ export interface IUserModel {
 export interface IUserModelStatic {
 	new (): IUserModel;
 	query(): QueryBuilder;
-	authenticate(params: {
-		identifier: string;
-		password: string;
-	}): Promise<(IUserModel & { isUsingMFA?: boolean }) | null>;
+	/**
+	 * Looks up a single user by username or email (whichever the identifier
+	 * matches). Used by core/password.ts's verifyPassword() to perform the
+	 * timing-safe password check and rate-limit bookkeeping itself, so that
+	 * security-sensitive logic lives in one place rather than being
+	 * reimplemented per model.
+	 */
+	findByIdentifier(identifier: string): Promise<IUserModel | undefined | null>;
 }
 
 export interface ISessionModel {

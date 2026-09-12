@@ -41,6 +41,7 @@ function buildMockSession(overrides: Record<string, unknown> = {}) {
 const mockAuth = {
 	accessTokenExpiresIn: 3600,
 	refreshTokenExpiresIn: 86400,
+	loginWindowSeconds: 900,
 };
 
 // ─── App builder ─────────────────────────────────────────────────────────────
@@ -77,21 +78,35 @@ function buildApp(
 		generateTokens: vi.fn().mockReturnValue(tokenObj),
 	} as unknown as ISessionModelStatic;
 
+	const auth = {
+		...mockAuth,
+		verifyPasswordSafe: vi.fn().mockResolvedValue(true),
+		checkRateLimit: vi
+			.fn()
+			.mockReturnValue({ blocked: false, remainingAttempts: 5 }),
+	} as unknown as AuthFastifyPluginOptions["auth"];
+
 	const User = {
 		query: vi.fn().mockReturnValue({
 			insert: vi.fn().mockResolvedValue(mockUser),
 		}),
-		authenticate: vi.fn().mockResolvedValue(mockUser),
+		findByIdentifier: vi.fn().mockResolvedValue({
+			...mockUser,
+			hashed_password: "hashed_secret",
+			failed_login_attempts: 0,
+			failed_login_window_started_at: null,
+			$query: vi.fn().mockReturnValue({ patch: vi.fn().mockResolvedValue(1) }),
+		}),
 	} as unknown as IUserModelStatic;
 
 	const opts: AuthFastifyPluginOptions = {
 		strategy: "sessions",
-		auth: mockAuth as unknown as AuthFastifyPluginOptions["auth"],
+		auth,
 		models: { User, Session },
 	};
 
 	registerSessionsStrategy(app, opts);
-	return { app, User, Session, qb };
+	return { app, User, Session, qb, auth };
 }
 
 // ─── POST /signup ─────────────────────────────────────────────────────────────
@@ -232,8 +247,10 @@ describe("POST /login", () => {
 	});
 
 	it("returns 401 when credentials are invalid", async () => {
-		const { app, User } = buildApp();
-		(User.authenticate as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+		const { app, auth } = buildApp();
+		(auth.verifyPasswordSafe as ReturnType<typeof vi.fn>).mockResolvedValue(
+			false,
+		);
 		await app.ready();
 		const response = await app.inject({
 			method: "POST",
@@ -242,6 +259,31 @@ describe("POST /login", () => {
 		});
 		expect(response.statusCode).toBe(401);
 		expect(response.json()).toMatchObject({ error: "Invalid credentials" });
+	});
+
+	it("returns 429 with a Retry-After header when the account is rate limited", async () => {
+		const { app, User, auth } = buildApp();
+		(User.findByIdentifier as ReturnType<typeof vi.fn>).mockResolvedValue({
+			...mockUser,
+			hashed_password: "hashed_secret",
+			failed_login_attempts: 5,
+			failed_login_window_started_at: new Date().toISOString(),
+			$query: vi.fn().mockReturnValue({ patch: vi.fn().mockResolvedValue(1) }),
+		});
+		(auth.checkRateLimit as ReturnType<typeof vi.fn>).mockReturnValue({
+			blocked: true,
+			remainingAttempts: 0,
+			retryAfter: 42,
+		});
+		await app.ready();
+		const response = await app.inject({
+			method: "POST",
+			url: "/login",
+			payload: { identifier: "testuser", password: "secret" },
+		});
+		expect(response.statusCode).toBe(429);
+		expect(response.headers["retry-after"]).toBe("42");
+		expect(auth.verifyPasswordSafe).not.toHaveBeenCalled();
 	});
 
 	it("returns 201 with tokens for API clients", async () => {

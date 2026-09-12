@@ -118,7 +118,7 @@ describe("app_for_mfa_totp_strategy", () => {
 		describe("when the login details are correct", () => {
 			describe("and the user is using MFA", () => {
 				it("should create a MFAToken record in the database", async () => {
-					const user = seedEnrolledUser(ctx);
+					const user = await seedEnrolledUser(ctx);
 					await ctx.app.inject({
 						method: "POST",
 						url: "/login",
@@ -129,7 +129,7 @@ describe("app_for_mfa_totp_strategy", () => {
 				});
 
 				it("should reply with a HTTP Status 201 and the MFA token in the payload", async () => {
-					seedEnrolledUser(ctx);
+					await seedEnrolledUser(ctx);
 					const response = await ctx.app.inject({
 						method: "POST",
 						url: "/login",
@@ -144,7 +144,7 @@ describe("app_for_mfa_totp_strategy", () => {
 
 			describe("but the user is not using MFA", () => {
 				it("should create a session record in the database", async () => {
-					seedPlainUser(ctx);
+					await seedPlainUser(ctx);
 					await ctx.app.inject({
 						method: "POST",
 						url: "/login",
@@ -154,7 +154,7 @@ describe("app_for_mfa_totp_strategy", () => {
 				});
 
 				it("should return a HTTP status 201 with the access and refresh tokens", async () => {
-					seedPlainUser(ctx);
+					await seedPlainUser(ctx);
 					const response = await ctx.app.inject({
 						method: "POST",
 						url: "/login",
@@ -172,7 +172,7 @@ describe("app_for_mfa_totp_strategy", () => {
 			// NOTE: the current implementation returns 401 (not 400) here, the
 			// same pattern as the sessions/mfa-sms strategies' /login route.
 			it("should a HTTP status 401, and an explanation of the error", async () => {
-				seedPlainUser(ctx);
+				await seedPlainUser(ctx);
 				const response = await ctx.app.inject({
 					method: "POST",
 					url: "/login",
@@ -188,7 +188,7 @@ describe("app_for_mfa_totp_strategy", () => {
 	// that actually completes the MFA login flow, so it's covered here too.
 	describe("POST /login/mfa", () => {
 		async function requestMfaToken(ctx: BuiltApp) {
-			const user = seedEnrolledUser(ctx);
+			const user = await seedEnrolledUser(ctx);
 			const loginResponse = await ctx.app.inject({
 				method: "POST",
 				url: "/login",
@@ -332,7 +332,7 @@ describe("app_for_mfa_totp_strategy", () => {
 		describe("when there is a logged-in user", () => {
 			describe("but the recovery codes have already been generated", () => {
 				it("should respond with a HTTP 400 Status and inform that the codes have already been generated", async () => {
-					const user = seedPlainUser(ctx);
+					const user = await seedPlainUser(ctx);
 					const session = ctx.createSession(user.id);
 					ctx.recoveryCodes.push({
 						id: 1,
@@ -351,7 +351,7 @@ describe("app_for_mfa_totp_strategy", () => {
 
 			describe("and the recovery codes have not yet been generated", () => {
 				it("should generate the recovery codes and return them in a HTTP 201 response", async () => {
-					const user = seedPlainUser(ctx);
+					const user = await seedPlainUser(ctx);
 					const session = ctx.createSession(user.id);
 					const response = await ctx.app.inject({
 						method: "POST",
@@ -384,7 +384,7 @@ describe("app_for_mfa_totp_strategy", () => {
 
 		describe("when there is a logged-in user", () => {
 			it("should update the user record in the database with the mfa_totp_secret", async () => {
-				const user = seedPlainUser(ctx);
+				const user = await seedPlainUser(ctx);
 				const session = ctx.createSession(user.id);
 				expect(user.mfa_totp_secret).toBeNull();
 				await ctx.app.inject({
@@ -396,7 +396,7 @@ describe("app_for_mfa_totp_strategy", () => {
 			});
 
 			it("should generate a QR Code image and return that data in the response", async () => {
-				const user = seedPlainUser(ctx);
+				const user = await seedPlainUser(ctx);
 				const session = ctx.createSession(user.id);
 				const response = await ctx.app.inject({
 					method: "POST",
@@ -412,7 +412,7 @@ describe("app_for_mfa_totp_strategy", () => {
 
 		describe("when there is an error", () => {
 			it("should respond with a HTTP status 500 and an error message", async () => {
-				const user = seedPlainUser(ctx);
+				const user = await seedPlainUser(ctx);
 				const session = ctx.createSession(user.id);
 				// Simulate a persistence failure while writing the new secret.
 				ctx.users[0].$query = () => ({
@@ -446,7 +446,7 @@ describe("app_for_mfa_totp_strategy", () => {
 		describe("when there is a logged-in user", () => {
 			describe("but the token is invalid", () => {
 				it("should respond with a HTTP 400 status and the message of Invalid TOTP token", async () => {
-					const user = seedEnrolledUser(ctx);
+					const user = await seedEnrolledUser(ctx);
 					const session = ctx.createSession(user.id);
 					const response = await ctx.app.inject({
 						method: "POST",
@@ -467,7 +467,7 @@ describe("app_for_mfa_totp_strategy", () => {
 				// slip from the "invalid" case above — the actual success response
 				// is a 200 with a "verified successfully" message.
 				it("should respond with a HTTP 200 status and a message that the token is valid", async () => {
-					const user = seedEnrolledUser(ctx);
+					const user = await seedEnrolledUser(ctx);
 					const session = ctx.createSession(user.id);
 					const response = await ctx.app.inject({
 						method: "POST",
@@ -499,7 +499,7 @@ describe("app_for_mfa_totp_strategy", () => {
 		describe("when there is a logged-in user", () => {
 			describe("but the password is invalid", () => {
 				it("should respond with a HTTP 400 status and a message that the password is invalid", async () => {
-					const user = seedEnrolledUser(ctx);
+					const user = await seedEnrolledUser(ctx);
 					const session = ctx.createSession(user.id);
 					const response = await ctx.app.inject({
 						method: "POST",
@@ -508,13 +508,15 @@ describe("app_for_mfa_totp_strategy", () => {
 						payload: { password: "wrong-password", code: currentTotpCode() },
 					});
 					expect(response.statusCode).toBe(400);
-					expect(response.json()).toMatchObject({ error: "Invalid password" });
+					expect(response.json()).toMatchObject({
+						error: "Invalid credentials",
+					});
 				});
 			});
 
 			describe("but the code is invalid", () => {
 				it("should respond with a HTTP 400 status and a message that the MFA TOTP code is invalid", async () => {
-					const user = seedEnrolledUser(ctx);
+					const user = await seedEnrolledUser(ctx);
 					const session = ctx.createSession(user.id);
 					const response = await ctx.app.inject({
 						method: "POST",
@@ -531,7 +533,7 @@ describe("app_for_mfa_totp_strategy", () => {
 
 			describe("and the password and code are valid", () => {
 				it("should remove the mfa_totp_secret from the user record in the database", async () => {
-					const user = seedEnrolledUser(ctx);
+					const user = await seedEnrolledUser(ctx);
 					const session = ctx.createSession(user.id);
 					await ctx.app.inject({
 						method: "POST",
@@ -543,7 +545,7 @@ describe("app_for_mfa_totp_strategy", () => {
 				});
 
 				it("should delete from the database all of the recovery codes that are linked to the user", async () => {
-					const user = seedEnrolledUser(ctx);
+					const user = await seedEnrolledUser(ctx);
 					const session = ctx.createSession(user.id);
 					ctx.recoveryCodes.push(
 						{ id: 1, user_id: user.id, hashed_code: "a" },
@@ -561,7 +563,7 @@ describe("app_for_mfa_totp_strategy", () => {
 				});
 
 				it("should respond with a HTTP 200 status and a message that the MFA TOTP has been disabled", async () => {
-					const user = seedEnrolledUser(ctx);
+					const user = await seedEnrolledUser(ctx);
 					const session = ctx.createSession(user.id);
 					const response = await ctx.app.inject({
 						method: "POST",
@@ -580,7 +582,7 @@ describe("app_for_mfa_totp_strategy", () => {
 
 	describe("POST /auth/mfa/disable-with-recovery-code", () => {
 		async function seedEnrolledUserWithRecoveryCode(ctx: BuiltApp) {
-			const user = seedEnrolledUser(ctx);
+			const user = await seedEnrolledUser(ctx);
 			const rawCode = "f6e5d4c3b2";
 			ctx.recoveryCodes.push({
 				id: 1,
@@ -614,7 +616,9 @@ describe("app_for_mfa_totp_strategy", () => {
 						payload: { password: "wrong-password", code: rawCode },
 					});
 					expect(response.statusCode).toBe(400);
-					expect(response.json()).toMatchObject({ error: "Invalid password" });
+					expect(response.json()).toMatchObject({
+						error: "Invalid credentials",
+					});
 				});
 			});
 

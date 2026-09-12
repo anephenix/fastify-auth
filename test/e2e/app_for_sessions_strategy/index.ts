@@ -227,6 +227,18 @@ export interface BuiltApp {
 const mockAuth = {
 	accessTokenExpiresIn: 3600,
 	refreshTokenExpiresIn: 86400,
+	loginWindowSeconds: 900,
+	// This fixture stores passwords in plaintext for simplicity (see
+	// FakeUser.hashed_password below) - a real Auth instance does a
+	// timing-safe argon2 comparison here instead.
+	async verifyPasswordSafe(password: string, hashedPassword?: string) {
+		return hashedPassword !== undefined && password === hashedPassword;
+	},
+	// Rate limiting itself is covered by the strategy/core unit tests -
+	// this fixture always reports the account as within its limits.
+	checkRateLimit() {
+		return { blocked: false, remainingAttempts: 5 };
+	},
 } as unknown as Auth;
 
 export function buildApp(): BuiltApp {
@@ -263,26 +275,28 @@ export function buildApp(): BuiltApp {
 						username: data.username,
 						email: data.email,
 						password: data.password,
+						hashed_password: data.password,
+						failed_login_attempts: 0,
+						failed_login_window_started_at: null,
 						...(data.mobile_number && { mobile_number: data.mobile_number }),
+						$query() {
+							return {
+								patch: async (patchData: Partial<FakeUser>) => {
+									Object.assign(user, patchData);
+								},
+							};
+						},
 					} as FakeUser;
 					users.push(user);
 					return Promise.resolve(user);
 				},
 			};
 		},
-		async authenticate({
-			identifier,
-			password,
-		}: {
-			identifier: string;
-			password: string;
-		}) {
-			const user = users.find(
+		async findByIdentifier(identifier: string) {
+			return users.find(
 				(candidate) =>
 					candidate.username === identifier || candidate.email === identifier,
 			);
-			if (!user || user.password !== password) return null;
-			return user;
 		},
 	} as unknown as IUserModelStatic;
 
