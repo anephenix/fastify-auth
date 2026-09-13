@@ -1,5 +1,12 @@
 # Changelog
 
+### 0.0.3 - Monday 14th September, 2026
+
+- Add hooks.onSignup and export createAuthenticateSession
+- Fix Postgres bug where lockout bookkeeping silently broke after the first failed attempt
+- Own password verification and rate limiting instead of delegating to User.authenticate()
+- Fix type/model bugs found by a real dogfood app
+
 ### 0.0.2 - Thursday 3rd September, 2026
 
 - Warn against combining sessions + mfa-sms in the README
