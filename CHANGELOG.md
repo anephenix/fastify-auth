@@ -1,5 +1,9 @@
 # Changelog
 
+### 0.0.5 - Sunday 27th September, 2026
+
+- Updated dependencies
+
 ### 0.0.4 - Monday 14th September, 2026
 
 - Updated package-lock.json file
