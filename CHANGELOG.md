@@ -1,5 +1,11 @@
 # Changelog
 
+### 0.0.6 - Sunday 27th September, 2026
+
+- 0.0.5
+- Updated changelog
+- Updated dependencies
+
 ### 0.0.5 - Sunday 27th September, 2026
 
 - Updated dependencies
